@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
-use std::i64;
 
 pub struct Emulator {
   regfile : [u32; 32],
@@ -26,12 +25,20 @@ impl Emulator {
     // read in binary file
     let lines = read_lines(path).expect("Couldn't open input file");
     // Consumes the iterator, returns an (Optional) String
+    let mut pc : u32 = 0;
     for line in lines.map_while(Result::ok) {
-      let instruction = i64::from_str_radix(&line, 16).expect("Error parsing hex file");
-      println!("{:X}", instruction);
+      // read one instruction
+      let instruction = u32::from_str_radix(&line, 16).expect("Error parsing hex file");
+
+      // write one instruction
+      instructions.insert(pc, instruction as u8);
+      instructions.insert(pc + 1, (instruction >> 8) as u8);
+      instructions.insert(pc + 2, (instruction >> 16) as u8);
+      instructions.insert(pc + 3, (instruction >> 24) as u8);
+
+      pc += 4;
     }
     
-    // TODO: read in instructions
 
     Emulator {
       regfile: [0, 0, 0, 0, 0, 0, 0, 0,
@@ -45,31 +52,62 @@ impl Emulator {
     }
   }
 
-  //pub fn run(&mut self) -> u32 {
-  //  while !self.halted {
-  //    self.execute(self.ram[usize::from(self.pc)]);
-  //  }
-//
-  //  // return the value in r3
-  //  self.regfile[3]
-  //}
-//
-  //fn execute(&mut self, instr : u32) {
-  //  let opcode = instr >> 13; // opcode is top 3 bits of instruction
-  //  let args = instr & 0x1FFF; // args are everything else
-//
-  //  match opcode {
-  //    0 => self.alu_op(args),
-  //    1 => self.add_immediate(args),
-  //    2 => panic!("Invalid opcode"),
-  //    3 => self.load_upper_immediate(args),
-  //    4 => self.store_word(args),
-  //    5 => self.load_word(args),
-  //    6 => self.branch(args),
-  //    7 => self.jalr_or_exc(args),
-  //    _ => panic!("instr >> 13 should always be < 8")
-  //  }
-  //}
+  fn mem_write8(&mut self, addr : u32, data : u8) {
+    self.ram.insert(addr, data);
+  }
+
+  fn mem_write16(&mut self, addr : u32, data : u16) {
+    self.mem_write8(addr, data as u8);
+    self.mem_write8(addr + 1, (data >> 8) as u8);
+  }
+
+  fn mem_write32(&mut self, addr : u32, data : u32) {
+    self.mem_write16(addr, data as u16);
+    self.mem_write16(addr + 2, (data >> 16) as u16);
+  }
+
+  fn mem_read8(&self, addr : u32) -> u8 {
+    if self.ram.contains_key(&addr) {
+      self.ram[&addr]
+    } else {
+      0
+    }
+  }
+
+  fn mem_read16(&self, addr : u32) -> u16 {
+    (u16::from(self.mem_read8(addr + 1)) << 8) + 
+    u16::from(self.mem_read8(addr))
+  }
+
+  fn mem_read32(&self, addr : u32) -> u32 {
+    (u32::from(self.mem_read16(addr + 2)) << 16) + 
+    u32::from(self.mem_read16(addr))
+  }
+
+  pub fn run(&mut self) -> u32 {
+    while !self.halted {
+      self.execute(self.mem_read32(self.pc));
+    }
+
+    // return the value in r3
+    self.regfile[3]
+  }
+
+  fn execute(&mut self, instr : u32) {
+    let opcode = instr >> 27; // opcode is top 5 bits of instruction
+
+    //match opcode {
+    //  0 => self.alu_op(args),
+    //  1 => self.add_immediate(args),
+    //  2 => panic!("Invalid opcode"),
+    //  3 => self.load_upper_immediate(args),
+    //  4 => self.store_word(args),
+    //  5 => self.load_word(args),
+    //  6 => self.branch(args),
+    //  7 => self.jalr_or_exc(args),
+    //  _ => panic!("instr >> 13 should always be < 8")
+    //}
+  }
 //
   //fn alu_op(&mut self, args : u32) {
   //  // instruction format is

@@ -12,8 +12,8 @@ fn main() {
   if args.len() == 2 {
     // file to run is passed as a command line argument
     let mut cpu = Emulator::new(args[1].clone());
-    //let result = cpu.run();
-    //println!(""); // print a newline
+    let result = cpu.run();
+    println!("{}", result);
     //process::exit(result as i32);
   } else {
     println!("Usage: cargo run -- file.hex");
