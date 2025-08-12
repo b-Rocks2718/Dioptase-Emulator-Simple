@@ -96,177 +96,326 @@ impl Emulator {
   fn execute(&mut self, instr : u32) {
     let opcode = instr >> 27; // opcode is top 5 bits of instruction
 
-    //match opcode {
-    //  0 => self.alu_op(args),
-    //  1 => self.add_immediate(args),
-    //  2 => panic!("Invalid opcode"),
-    //  3 => self.load_upper_immediate(args),
-    //  4 => self.store_word(args),
-    //  5 => self.load_word(args),
-    //  6 => self.branch(args),
-    //  7 => self.jalr_or_exc(args),
-    //  _ => panic!("instr >> 13 should always be < 8")
-    //}
+    match opcode {
+      0 => self.alu_reg_op(instr),
+      1 => self.alu_imm_op(instr),
+      // 2 => self.lui(instr),
+      // 3 => self.mem_absolute_w(instr),
+      // 4 => self.mem_relative_w(instr),
+      // 5 => self.mem_immediate_w(instr),
+      // 6 => self.mem_absolute_d(instr),
+      // 7 => self.mem_relative_d(instr),
+      // 8 => self.mem_immediate_d(instr),
+      // 9 => self.mem_absolute_b(instr),
+      // 10 => self.mem_relative_b(instr),
+      // 11 => self.mem_immediate_b(instr),
+      // 12 => self.branch_imm(instr),
+      // 13 => self.branch_absolute(instr),
+      // 14 => self.branch_relative(instr),
+      // 15 => self.syscall(instr),
+      _ => panic!("Unrecognized opcode")
+    }
   }
-//
-  //fn alu_op(&mut self, args : u32) {
-  //  // instruction format is
-  //  // r_a (3 bits) | r_b (3 bits) | op (4 bits) | r_c (3 bits)
-  //  let r_a = args >> 10;
-  //  let r_b = (args >> 7) & 0b111;
-  //  let op = (args >> 3) & 0b1111;
-  //  let r_c = args & 0b111;
-//
-  //  // retrieve arguments
-  //  let mut r_b = self.regfile[usize::from(r_b)];
-  //  let r_c = self.regfile[usize::from(r_c)];
-//
-  //  // carry flag is set differently for each instruction,
-  //  // so its handled here. The other flags are all handled together
-  //  let result = match op {
-  //    0 => {
-  //      self.flags[0] = false;
-  //      !(r_b & r_c)  // nand
-  //    },
-  //    1 => {
-  //      // add
-  //      let result = u32::from(r_b) + u32::from(r_c);
-//
-  //      // set the carry flag
-  //      self.flags[0] = if result >> 16 != 0 {true} else {false};
-//
-  //      result as u16
-  //    },
-  //    2 => {
-  //      // addc
-  //      let result = u32::from(r_c) + u32::from(r_b) + u32::from(self.flags[0]);
-//
-  //      // set the carry flag
-  //      self.flags[0] = if result >> 16 != 0 {true} else {false};
-//
-  //      result as u16
-  //    },
-  //    3 => {
-  //      self.flags[0] = false;
-  //      r_b | r_c // or
-  //    },
-  //    4 => {
-  //      // subc
-//
-  //      // two's complement
-  //      r_b = (1 + u32::from(
-  //        !(u16::wrapping_add(
-  //        u16::from(!self.flags[0]), r_b)))) as u16;
-  //      let result = u32::from(r_c) + u32::from(r_b);
-//
-  //      // set the carry flag
-  //      self.flags[0] = if result >> 16 != 0 {true} else {false};
-//
-  //      result as u16
-  //    },
-  //    5 => {
-  //      self.flags[0] = false;
-  //      r_b & r_c // and
-  //    }, 
-  //    6 => {
-  //      // sub, cmp
-//
-  //      // two's complement
-  //      r_b = (1 + u32::from(!r_b)) as u16;
-  //      let result = u32::from(r_c) + u32::from(r_b);
-//
-  //      // set the carry flag
-  //      self.flags[0] = if result >> 16 != 0 {true} else {false};
-//
-  //      result as u16
-  //    },
-  //    7 => {
-  //      self.flags[0] = false;
-  //      r_b ^ r_c // xor
-  //    },
-  //    8 => {
-  //      self.flags[0] = false;
-  //      !r_c // not
-  //    },
-  //    9 => {
-  //      // set carry flag
-  //      self.flags[0] = if r_c >> 15 != 0 {true} else {false};
-  //      r_c << 1 // shl
-  //    },
-  //    10 => {
-  //      // set carry flag
-  //      self.flags[0] = if r_c & 1 != 0 {true} else {false};
-  //      r_c >> 1 // shr
-  //    },
-  //    11 => {
-  //      // set carry flag
-  //      let carry = r_c >> 15;
-  //      self.flags[0] = if carry != 0 {true} else {false};
-  //      (r_c << 1) + carry // rotl
-  //    },
-  //    12 => {
-  //      // set carry flag
-  //      let carry = r_c & 1;
-  //      self.flags[0] = if carry != 0 {true} else {false};
-  //      (r_c >> 1) + (carry << 15) // rotr
-  //    },
-  //    13 => {
-  //      // set carry flag
-  //      let carry = r_c & 1;
-  //      let sign = r_c >> 15;
-  //      self.flags[0] = if carry != 0 {true} else {false};
-  //      (r_c >> 1) + (sign << 15) // sshr
-  //    },
-  //    14 => {
-  //      // set carry flag
-  //      let carry = r_c & 15;
-  //      let old_carry = u16::from(self.flags[0]);
-  //      self.flags[0] = if carry != 0 {true} else {false};
-  //      (r_c >> 1) + (old_carry << 15) // shrc
-  //    },
-  //    15 => {
-  //      // set carry flag
-  //      let carry = r_c >> 15;
-  //      let old_carry = u16::from(self.flags[0]);
-  //      self.flags[0] = if carry != 0 {true} else {false};
-  //      (r_c << 1) + old_carry // shlc
-  //    },
-  //    _ => panic!("args & 15 should always be < 16")
-  //  };
-//
-  //  // never update r0
-  //  if r_a != 0 {
-  //    self.regfile[usize::from(r_a)] = result as u16;
-  //  }
-  //  
-  //  self.update_flags(result, r_b, r_c);
-//
-  //  self.pc += 1;
-  //}
-//
-  //fn add_immediate(&mut self, args : u32) {
-  //  // add the value in r_b to imm, store result in r_b
-  //  let r_a = args >> 10;
-  //  let r_b = (args >> 7) & 0b111;
-  //  let imm = Self::sign_ext_7(args & 0x7F);
-  //  let r_b = self.regfile[usize::from(r_b)];
-//
-  //  // convert to u32 so we can update the carry flag
-  //  let result = u32::from(r_b) + u32::from(imm);
-//
-  //  if r_a != 0 {
-  //    self.regfile[usize::from(r_a)] = result as u16;
-  //  }
-//
-  //  // set the carry flag
-  //  self.flags[0] = if result >> 16 != 0 {true} else {false};
-//
-  //  // update the other flags
-  //  self.update_flags(result as u16, r_b, imm);
-//
-  //  self.pc += 1;
-//
-  //}
+
+  fn alu_reg_op(&mut self, instr : u32) {
+    // instruction format is
+    // 00000aaaaabbbbbxxxxxxx00000ccccc
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | unused (7 bits) | op (5 bits) | r_c (5 bits)
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let op = (instr >> 5) & 0x1F;
+    let r_c = instr & 0x1F;
+
+    // retrieve arguments
+    let r_b = self.regfile[r_b as usize];
+    let r_c = self.regfile[r_c as usize];
+
+    // carry flag is set differently for each instruction,
+    // so its handled here. The other flags are all handled together
+    let result = match op {
+      0 => {
+        self.flags[0] = false;
+        r_b & r_c // and
+      }, 
+      1 => {
+        self.flags[0] = false;
+        !(r_b & r_c)  // nand
+      },
+      2 => {
+        self.flags[0] = false;
+        r_b | r_c // or
+      },
+      3 => {
+        self.flags[0] = false;
+        !(r_b | r_c) // nor
+      },
+      4 => {
+        self.flags[0] = false;
+        r_b ^ r_c // xor
+      },
+      5 => {
+        self.flags[0] = false;
+        !(r_b ^ r_c) // xnor
+      },
+      6 => {
+        self.flags[0] = false;
+        !r_c // not
+      },
+      7 => {
+        // set carry flag
+        self.flags[0] = r_c >> 31 != 0;
+        r_c << 1 // lsl
+      },
+      8 => {
+        // set carry flag
+        self.flags[0] = r_c & 1 != 0;
+        r_c >> 1 // lsr
+      },
+      9 => {
+        // set carry flag
+        let carry = r_c & 1;
+        let sign = r_c >> 31;
+        self.flags[0] = carry != 0;
+        (r_c >> 1) + (sign << 31) // asr
+      },
+      10 => {
+        // set carry flag
+        let carry = r_c >> 31;
+        self.flags[0] = carry != 0;
+        (r_c << 1) + carry // rotl
+      },
+      11 => {
+        // set carry flag
+        let carry = r_c & 1;
+        self.flags[0] = carry != 0;
+        (r_c >> 1) + (carry << 31) // rotr
+      },
+      12 => {
+        // set carry flag
+        let carry = r_c >> 31;
+        let old_carry = u32::from(self.flags[0]);
+        self.flags[0] = carry != 0;
+        (r_c << 1) + old_carry // lslc
+      },
+      13 => {
+        // set carry flag
+        let carry = r_c & 1;
+        let old_carry = u32::from(self.flags[0]);
+        self.flags[0] = carry != 0;
+        (r_c >> 1) + (old_carry << 31) // lsrc
+      },
+      14 => {
+        // add
+        let result = u64::from(r_b) + u64::from(r_c);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      15 => {
+        // addc
+        let result = u64::from(r_c) + u64::from(r_b) + u64::from(self.flags[0]);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      16 => {
+        // sub
+
+        // two's complement
+        let r_b = (1 + u64::from(!r_b)) as u32;
+        let result = u64::from(r_c) + u64::from(r_b);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      17 => {
+        // subb
+
+        // two's complement
+        let r_b = (1 + u64::from(
+          !(u32::wrapping_add(
+          u32::from(!self.flags[0]), r_b)))) as u32;
+        let result = u64::from(r_c) + u64::from(r_b);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      18 => {
+        // mul
+        let result = u64::from(r_b) * u64::from(r_c);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      _ => panic!("Invalid opcode")
+    };
+  }
+
+  fn alu_imm_op(&mut self, instr : u32) {
+    // instruction format is
+    // 00000aaaaabbbbb00000iiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (5 bits) | imm (12 bits)
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let op = (instr >> 12) & 0x1F;
+    let imm = instr & 0xFFF;
+
+    // retrieve arguments
+    let r_b = self.regfile[r_b as usize];
+
+    // carry flag is set differently for each instruction,
+    // so its handled here. The other flags are all handled together
+    let result = match op {
+      0 => {
+        self.flags[0] = false;
+        r_b & imm // and
+      }, 
+      1 => {
+        self.flags[0] = false;
+        !(r_b & imm)  // nand
+      },
+      2 => {
+        self.flags[0] = false;
+        r_b | imm // or
+      },
+      3 => {
+        self.flags[0] = false;
+        !(r_b | imm) // nor
+      },
+      4 => {
+        self.flags[0] = false;
+        r_b ^ imm // xor
+      },
+      5 => {
+        self.flags[0] = false;
+        !(r_b ^ imm) // xnor
+      },
+      6 => {
+        self.flags[0] = false;
+        !imm // not
+      },
+      7 => {
+        // set carry flag
+        self.flags[0] = imm >> 31 != 0;
+        imm << 1 // lsl
+      },
+      8 => {
+        // set carry flag
+        self.flags[0] = imm & 1 != 0;
+        imm >> 1 // lsr
+      },
+      9 => {
+        // set carry flag
+        let carry = imm & 1;
+        let sign = imm >> 31;
+        self.flags[0] = carry != 0;
+        (imm >> 1) + (sign << 31) // asr
+      },
+      10 => {
+        // set carry flag
+        let carry = imm >> 31;
+        self.flags[0] = carry != 0;
+        (imm << 1) + carry // rotl
+      },
+      11 => {
+        // set carry flag
+        let carry = imm & 1;
+        self.flags[0] = carry != 0;
+        (imm >> 1) + (carry << 31) // rotr
+      },
+      12 => {
+        // set carry flag
+        let carry = imm >> 31;
+        let old_carry = u32::from(self.flags[0]);
+        self.flags[0] = carry != 0;
+        (imm << 1) + old_carry // lslc
+      },
+      13 => {
+        // set carry flag
+        let carry = imm & 1;
+        let old_carry = u32::from(self.flags[0]);
+        self.flags[0] = carry != 0;
+        (imm >> 1) + (old_carry << 31) // lsrc
+      },
+      14 => {
+        // add
+        let result = u64::from(r_b) + u64::from(imm);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      15 => {
+        // addc
+        let result = u64::from(imm) + u64::from(r_b) + u64::from(self.flags[0]);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      16 => {
+        // sub
+
+        // two's complement
+        let r_b = (1 + u64::from(!r_b)) as u32;
+        let result = u64::from(imm) + u64::from(r_b);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      17 => {
+        // subb
+
+        // two's complement
+        let r_b = (1 + u64::from(
+          !(u32::wrapping_add(
+          u32::from(!self.flags[0]), r_b)))) as u32;
+        let result = u64::from(imm) + u64::from(r_b);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      18 => {
+        // mul
+        let result = u64::from(r_b) * u64::from(imm);
+
+        // set the carry flag
+        self.flags[0] = result >> 32 != 0;
+
+        result as u32
+      },
+      _ => panic!("Invalid opcode")
+    };
+
+    // never update r0
+    if r_a != 0 {
+      self.regfile[r_a as usize] = result;
+    }
+    
+    // self.update_flags(result, r_b, r_c);
+
+    self.pc += 4;
+  }
+
+
+
+
 //
   //fn load_upper_immediate(&mut self, args : u32){
   //  // store imm << 6 in r_a
