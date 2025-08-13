@@ -99,7 +99,7 @@ impl Emulator {
     match opcode {
       0 => self.alu_reg_op(instr),
       1 => self.alu_imm_op(instr),
-      // 2 => self.lui(instr),
+      2 => self.load_upper_immediate(instr),
       // 3 => self.mem_absolute_w(instr),
       // 4 => self.mem_relative_w(instr),
       // 5 => self.mem_immediate_w(instr),
@@ -111,8 +111,8 @@ impl Emulator {
       // 11 => self.mem_immediate_b(instr),
       // 12 => self.branch_imm(instr),
       // 13 => self.branch_absolute(instr),
-      // 14 => self.branch_relative(instr),
-      // 15 => self.syscall(instr),
+      14 => self.branch_relative(instr),
+      15 => self.syscall(instr),
       _ => panic!("Unrecognized opcode")
     }
   }
@@ -163,46 +163,47 @@ impl Emulator {
       },
       7 => {
         // set carry flag
-        self.flags[0] = r_c >> 31 != 0;
-        r_c << 1 // lsl
+        self.flags[0] = (if r_c > 0 {r_b >> (32 - r_c)} else {0}) != 0;
+        r_b << r_c // lsl
       },
       8 => {
         // set carry flag
-        self.flags[0] = r_c & 1 != 0;
-        r_c >> 1 // lsr
+        self.flags[0] = r_b & ((1 << r_c) - 1) != 0;
+        r_b >> r_c // lsr
       },
       9 => {
         // set carry flag
-        let carry = r_c & 1;
-        let sign = r_c >> 31;
+        let carry = r_b & 1;
+        let sign = r_b >> 31;
         self.flags[0] = carry != 0;
-        (r_c >> 1) + (sign << 31) // asr
+        (r_b >> r_c) | (0xFFFFFFFF * sign << if r_c > 0 {32 - r_c} else {0}) // asr
       },
       10 => {
         // set carry flag
-        let carry = r_c >> 31;
+        let carry = r_b >> if r_c > 0 {32 - r_c} else {0};
         self.flags[0] = carry != 0;
-        (r_c << 1) + carry // rotl
+        (r_b << r_c) | carry // rotl
       },
       11 => {
         // set carry flag
-        let carry = r_c & 1;
+        let carry = r_b & ((1 << r_c) - 1);
         self.flags[0] = carry != 0;
-        (r_c >> 1) + (carry << 31) // rotr
+        (r_b >> r_c) | (carry << if r_c > 0 {32 - r_c} else {0}) // rotr
       },
       12 => {
         // set carry flag
-        let carry = r_c >> 31;
+        let carry = if r_c > 0 {r_b >> (32 - r_c)} else {0};
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (r_c << 1) + old_carry // lslc
+        (r_b << r_c) | if r_c > 0 {old_carry << (r_c - 1)} else {0} | (carry >> 1) // lslc
       },
       13 => {
         // set carry flag
-        let carry = r_c & 1;
+        let carry = r_b & ((1 << r_c) - 1);
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (r_c >> 1) + (old_carry << 31) // lsrc
+        (r_b >> r_c) | (old_carry << if r_c > 0 {32 - r_c} else {0}) 
+        | (carry << if r_c > 1 {33 - r_c} else {0}) // lsrc
       },
       14 => {
         // add
@@ -259,6 +260,34 @@ impl Emulator {
       },
       _ => panic!("Invalid opcode")
     };
+
+    // never update r0
+    if r_a != 0 {
+      self.regfile[r_a as usize] = result;
+    }
+    
+    // self.update_flags(result, r_b, r_c);
+
+    self.pc += 4;
+
+  }
+
+  fn decode_alu_imm(op : u32, imm : u32) -> u32 {
+    match op {
+      0..=6 => {
+        // Bitwise op
+        (imm & 0xFF) << ((imm >> 8) & 3)
+      },
+      7..=13 => {
+        // Shift op
+        imm & 0x1F
+      },
+      14..=18 => {
+        // Arithmetic op
+        imm | (0xFFFFF000 * (imm & 800))
+      },
+      _ => panic!("Unrecognized ALU operation")
+    }
   }
 
   fn alu_imm_op(&mut self, instr : u32) {
@@ -269,6 +298,8 @@ impl Emulator {
     let r_b = (instr >> 17) & 0x1F;
     let op = (instr >> 12) & 0x1F;
     let imm = instr & 0xFFF;
+
+    let imm = Self::decode_alu_imm(op, imm);
 
     // retrieve arguments
     let r_b = self.regfile[r_b as usize];
@@ -306,46 +337,47 @@ impl Emulator {
       },
       7 => {
         // set carry flag
-        self.flags[0] = imm >> 31 != 0;
-        imm << 1 // lsl
+        self.flags[0] = r_b >> if imm > 0 {32 - imm} else {0} != 0;
+        r_b << imm // lsl
       },
       8 => {
         // set carry flag
-        self.flags[0] = imm & 1 != 0;
-        imm >> 1 // lsr
+        self.flags[0] = r_b & ((1 << imm) - 1) != 0;
+        r_b >> imm // lsr
       },
       9 => {
         // set carry flag
-        let carry = imm & 1;
-        let sign = imm >> 31;
+        let carry = r_b & 1;
+        let sign = r_b >> 31;
         self.flags[0] = carry != 0;
-        (imm >> 1) + (sign << 31) // asr
+        (r_b >> imm) | (0xFFFFFFFF * sign << if imm > 0 {32 - imm} else {0}) // asr
       },
       10 => {
         // set carry flag
-        let carry = imm >> 31;
+        let carry = r_b >> if imm > 0 {32 - imm} else {0};
         self.flags[0] = carry != 0;
-        (imm << 1) + carry // rotl
+        (r_b << imm) | carry // rotl
       },
       11 => {
         // set carry flag
-        let carry = imm & 1;
+        let carry = r_b & ((1 << imm) - 1);
         self.flags[0] = carry != 0;
-        (imm >> 1) + (carry << 31) // rotr
+        (r_b >> imm) | (carry << if imm > 0 {32 - imm} else {0}) // rotr
       },
       12 => {
         // set carry flag
-        let carry = imm >> 31;
+        let carry = r_b >> if imm > 0 {32 - imm} else {0};
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (imm << 1) + old_carry // lslc
+        (r_b << imm) | (old_carry << if imm > 0 {imm - 1} else {0}) | (carry >> 1) // lslc
       },
       13 => {
         // set carry flag
-        let carry = imm & 1;
+        let carry = r_b & ((1 << imm) - 1);
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (imm >> 1) + (old_carry << 31) // lsrc
+        (r_b >> imm) | (old_carry << if imm > 0 {32 - imm} else {0})
+         | (carry << if imm > 1 {33 - imm} else {0}) // lsrc
       },
       14 => {
         // add
@@ -413,22 +445,18 @@ impl Emulator {
     self.pc += 4;
   }
 
+  fn load_upper_immediate(&mut self, instr : u32){
+    // store imm << 10 in r_a
+    let r_a = (instr >> 22) & 0x1F;
+    let imm = (instr & 0x03FFFFF) << 10;
 
+    if r_a != 0 {
+      self.regfile[r_a as usize] = imm;
+    }
 
+    self.pc += 4;
+  }
 
-//
-  //fn load_upper_immediate(&mut self, args : u32){
-  //  // store imm << 6 in r_a
-  //  let r_a = args >> 10;
-  //  let imm = (args & 0x03FF) << 6;
-//
-  //  if r_a != 0 {
-  //    self.regfile[usize::from(r_a)] = imm;
-  //  }
-//
-  //  self.pc += 1;
-  //}
-//
   //fn store_word(&mut self, args : u32) {
   //  // store the value in r_a at address r_b + imm
   //  let r_a = args >> 10;
@@ -523,6 +551,38 @@ impl Emulator {
   //  }
   //}
 
+  fn branch_relative(&mut self, instr : u32){
+    let op = (instr >> 22) & 0x1F;
+    let r_a = (instr >> 5) & 0x1F;
+    let r_b = instr & 0x1F;
+
+    let r_b = self.regfile[r_b as usize];
+
+    let branch = match op {
+      0 => true,
+      _ => panic!("Unrecognized branch code")
+    };
+
+    if branch {
+      self.regfile[r_a as usize] = self.pc + 4;
+      self.pc += r_b + 4;
+    } else {
+      self.pc += 4;
+    }
+  }
+
+  fn syscall(&mut self, instr : u32){
+    let imm = instr & 0x7F;
+
+    match imm {
+      0 => {
+        // sys EXIT
+        self.halted = true;
+      }
+      _ => panic!("Unrecognized syscall")
+    }
+  }
+
   //fn update_flags(&mut self, result : u16, lhs : u16, rhs : u16) {
   //  let result_sign = result >> 15;
   //  let lhs_sign = lhs >> 15;
@@ -536,17 +596,5 @@ impl Emulator {
   //  let ovrflw_condition = (result_sign != lhs_sign) && (lhs_sign == rhs_sign);
   //  self.flags[3] = if ovrflw_condition {true} else {false};
   //}
-//
-  //fn sign_ext_7 (x : u16) -> u16 {
-  //  let sign = x >> 6;
-  //  if sign != 0{
-  //    // this is a negative number
-  //    // we need to sign extend
-  //    x + 0xFF80
-  //  } else {
-  //    // this is a positive number
-  //    // we can zero extend
-  //    x
-  //  }
-  //}
+
 }
