@@ -100,17 +100,17 @@ impl Emulator {
       0 => self.alu_reg_op(instr),
       1 => self.alu_imm_op(instr),
       2 => self.load_upper_immediate(instr),
-      // 3 => self.mem_absolute_w(instr),
-      // 4 => self.mem_relative_w(instr),
-      // 5 => self.mem_immediate_w(instr),
-      // 6 => self.mem_absolute_d(instr),
-      // 7 => self.mem_relative_d(instr),
-      // 8 => self.mem_immediate_d(instr),
-      // 9 => self.mem_absolute_b(instr),
-      // 10 => self.mem_relative_b(instr),
-      // 11 => self.mem_immediate_b(instr),
-      // 12 => self.branch_imm(instr),
-      // 13 => self.branch_absolute(instr),
+      3 => self.mem_absolute_w(instr),
+      4 => self.mem_relative_w(instr),
+      5 => self.mem_imm_w(instr),
+      6 => self.mem_absolute_d(instr),
+      7 => self.mem_relative_d(instr),
+      8 => self.mem_imm_d(instr),
+      9 => self.mem_absolute_b(instr),
+      10 => self.mem_relative_b(instr),
+      11 => self.mem_imm_b(instr),
+      12 => self.branch_imm(instr),
+      13 => self.branch_absolute(instr),
       14 => self.branch_relative(instr),
       15 => self.syscall(instr),
       _ => panic!("Unrecognized opcode")
@@ -119,7 +119,7 @@ impl Emulator {
 
   fn alu_reg_op(&mut self, instr : u32) {
     // instruction format is
-    // 00000aaaaabbbbbxxxxxxx00000ccccc
+    // 00000aaaaabbbbbxxxxxxx?????ccccc
     // op (5 bits) | r_a (5 bits) | r_b (5 bits) | unused (7 bits) | op (5 bits) | r_c (5 bits)
     let r_a = (instr >> 22) & 0x1F;
     let r_b = (instr >> 17) & 0x1F;
@@ -227,7 +227,7 @@ impl Emulator {
         // sub
 
         // two's complement
-        let r_b = (1 + u64::from(!r_b)) as u32;
+        let r_c = (1 + u64::from(!r_c)) as u32;
         let result = u64::from(r_c) + u64::from(r_b);
 
         // set the carry flag
@@ -239,9 +239,9 @@ impl Emulator {
         // subb
 
         // two's complement
-        let r_b = (1 + u64::from(
+        let r_c = (1 + u64::from(
           !(u32::wrapping_add(
-          u32::from(!self.flags[0]), r_b)))) as u32;
+          u32::from(!self.flags[0]), r_c)))) as u32;
         let result = u64::from(r_c) + u64::from(r_b);
 
         // set the carry flag
@@ -284,7 +284,7 @@ impl Emulator {
       },
       14..=18 => {
         // Arithmetic op
-        imm | (0xFFFFF000 * (imm & 800))
+        imm | (0xFFFFF000 * ((imm >> 11) & 1)) // sign extend
       },
       _ => panic!("Unrecognized ALU operation")
     }
@@ -292,7 +292,7 @@ impl Emulator {
 
   fn alu_imm_op(&mut self, instr : u32) {
     // instruction format is
-    // 00000aaaaabbbbb00000iiiiiiiiiiii
+    // 00000aaaaabbbbb?????iiiiiiiiiiii
     // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (5 bits) | imm (12 bits)
     let r_a = (instr >> 22) & 0x1F;
     let r_b = (instr >> 17) & 0x1F;
@@ -457,33 +457,300 @@ impl Emulator {
     self.pc += 4;
   }
 
-  //fn store_word(&mut self, args : u32) {
-  //  // store the value in r_a at address r_b + imm
-  //  let r_a = args >> 10;
-  //  let r_b = (args >> 7) & 0b111;
-  //  let imm = Self::sign_ext_7(args & 0x7F);
-//
-  //  let address = u16::wrapping_add(self.regfile[usize::from(r_b)], imm);
-  //  self.ram[usize::from(address)] = self.regfile[usize::from(r_a)];
-//
-  //  self.pc += 1;
-  //}
-//
-  //fn load_word(&mut self, args : u32) {
-  //  // load the value at address r_b + imm into r_a
-  //  let r_a = args >> 10;
-  //  let r_b = (args >> 7) & 0b111;
-  //  let imm = Self::sign_ext_7(args & 0x7F);
-//
-  //  let address = u16::wrapping_add(self.regfile[usize::from(r_b)], imm);
-//
-  //  if r_a != 0 {
-  //    self.regfile[usize::from(r_a)] = self.ram[usize::from(address)];
-  //  }
-//
-  //  self.pc += 1;
-  //}
-//
+  fn mem_absolute_w(&mut self, instr : u32){
+    // instruction format is
+    // 00011aaaaabbbbb?yyzziiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (1 bit) | y (2 bits) | z (2 bits) | imm (12 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let is_load = ((instr >> 16) & 1) != 0; // is this a load? else is store
+    let y = (instr >> 14) & 3;
+    let z = (instr >> 12) & 3;
+    let imm = instr & 0xFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFFFF000 * ((imm >> 11) & 1));
+    // shift imm
+    let imm = imm << z;
+
+    if y >= 4 {panic!("y must be in range 0..=3 for memory instruction")};
+
+    // get addr
+    let r_b_out = self.regfile[r_b as usize];
+    let addr = if y == 2 {r_b_out} else {u32::wrapping_add(r_b_out, imm)}; // check for postincrement
+
+    if is_load {
+      self.regfile[r_a as usize] = self.mem_read32(addr);
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write32(addr, data);
+    }
+
+    if y == 1 || y == 2 {
+      // pre or post increment
+      self.regfile[r_b as usize] = u32::wrapping_add(r_b_out, imm);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_relative_w(&mut self, instr : u32){
+    // instruction format is
+    // 00100aaaaabbbbb?iiiiiiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (1 bit) | imm (16 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let is_load = ((instr >> 16) & 1) != 0; // is this a load? else is store
+    let imm = instr & 0xFFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFFF0000 * ((imm >> 15) & 1));
+
+    // get addr
+    let r_b_out = self.regfile[r_b as usize];
+    let addr = u32::wrapping_add(r_b_out, imm);
+
+    // make addr pc-relative
+    let addr = u32::wrapping_add(addr, self.pc);
+    let addr = u32::wrapping_add(addr, 4);
+
+    if is_load {
+      self.regfile[r_a as usize] = self.mem_read32(addr);
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write32(addr, data);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_imm_w(&mut self, instr : u32){
+    // instruction format is
+    // 00101aaaaa?iiiiiiiiiiiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | op (1 bit) | imm (21 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let is_load = ((instr >> 21) & 1) != 0; // is this a load? else is store
+    let imm = instr & 0x1FFFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFE00000 * ((imm >> 20) & 1));
+
+    // get addr
+    let addr = u32::wrapping_add(imm, self.pc);
+    let addr = u32::wrapping_add(addr, 4);
+
+    if is_load {
+      self.regfile[r_a as usize] = self.mem_read32(addr);
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write32(addr, data);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_absolute_d(&mut self, instr : u32){
+    // instruction format is
+    // 00110aaaaabbbbb?yyzziiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (1 bit) | y (2 bits) | z (2 bits) | imm (12 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let is_load = ((instr >> 16) & 1) != 0; // is this a load? else is store
+    let y = (instr >> 14) & 3;
+    let z = (instr >> 12) & 3;
+    let imm = instr & 0xFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFFFF000 * ((imm >> 11) & 1));
+    // shift imm
+    let imm = imm << z;
+
+    if y >= 4 {panic!("y must be in range 0..=3 for memory instruction")};
+
+    // get addr
+    let r_b_out = self.regfile[r_b as usize];
+    let addr = if y == 2 {r_b_out} else {u32::wrapping_add(r_b_out, imm)}; // check for postincrement
+
+    if is_load {
+      self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write16(addr, data as u16);
+    }
+
+    if y == 1 || y == 2 {
+      // pre or post increment
+      self.regfile[r_b as usize] = u32::wrapping_add(r_b_out, imm);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_relative_d(&mut self, instr : u32){
+    // instruction format is
+    // 00111aaaaabbbbb?iiiiiiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (1 bit) | imm (16 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let is_load = ((instr >> 16) & 1) != 0; // is this a load? else is store
+    let imm = instr & 0xFFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFFF0000 * ((imm >> 15) & 1));
+
+    // get addr
+    let r_b_out = self.regfile[r_b as usize];
+    let addr = u32::wrapping_add(r_b_out, imm);
+
+    // make addr pc-relative
+    let addr = u32::wrapping_add(addr, self.pc);
+    let addr = u32::wrapping_add(addr, 4);
+
+    if is_load {
+      self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write16(addr, data as u16);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_imm_d(&mut self, instr : u32){
+    // instruction format is
+    // 01000aaaaa?iiiiiiiiiiiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | op (1 bit) | imm (21 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let is_load = ((instr >> 21) & 1) != 0; // is this a load? else is store
+    let imm = instr & 0x1FFFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFE00000 * ((imm >> 20) & 1));
+
+    // get addr
+    let addr = u32::wrapping_add(imm, self.pc);
+    let addr = u32::wrapping_add(addr, 4);
+
+    if is_load {
+      self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write16(addr, data as u16);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_absolute_b(&mut self, instr : u32){
+    // instruction format is
+    // 01001aaaaabbbbb?yyzziiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (1 bit) | y (2 bits) | z (2 bits) | imm (12 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let is_load = ((instr >> 16) & 1) != 0; // is this a load? else is store
+    let y = (instr >> 14) & 3;
+    let z = (instr >> 12) & 3;
+    let imm = instr & 0xFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFFFF000 * ((imm >> 11) & 1));
+    // shift imm
+    let imm = imm << z;
+
+    if y >= 4 {panic!("y must be in range 0..=3 for memory instruction")};
+
+    // get addr
+    let r_b_out = self.regfile[r_b as usize];
+    let addr = if y == 2 {r_b_out} else {u32::wrapping_add(r_b_out, imm)}; // check for postincrement
+
+    if is_load {
+      self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write8(addr, data as u8);
+    }
+
+    if y == 1 || y == 2 {
+      // pre or post increment
+      self.regfile[r_b as usize] = u32::wrapping_add(r_b_out, imm);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_relative_b(&mut self, instr : u32){
+    // instruction format is
+    // 01010aaaaabbbbb?iiiiiiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | r_b (5 bits) | op (1 bit) | imm (16 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let r_b = (instr >> 17) & 0x1F;
+    let is_load = ((instr >> 16) & 1) != 0; // is this a load? else is store
+    let imm = instr & 0xFFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFFF0000 * ((imm >> 15) & 1));
+
+    // get addr
+    let r_b_out = self.regfile[r_b as usize];
+    let addr = u32::wrapping_add(r_b_out, imm);
+
+    // make addr pc-relative
+    let addr = u32::wrapping_add(addr, self.pc);
+    let addr = u32::wrapping_add(addr, 4);
+
+    if is_load {
+      self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write8(addr, data as u8);
+    }
+
+    self.pc += 4;
+  }
+
+  fn mem_imm_b(&mut self, instr : u32){
+    // instruction format is
+    // 01011aaaaa?iiiiiiiiiiiiiiiiiiiii
+    // op (5 bits) | r_a (5 bits) | op (1 bit) | imm (21 bits)
+
+    let r_a = (instr >> 22) & 0x1F;
+    let is_load = ((instr >> 21) & 1) != 0; // is this a load? else is store
+    let imm = instr & 0x1FFFFF;
+
+    // sign extend imm
+    let imm = imm | (0xFFE00000 * ((imm >> 20) & 1));
+
+    // get addr
+    let addr = u32::wrapping_add(imm, self.pc);
+    let addr = u32::wrapping_add(addr, 4);
+
+    if is_load {
+      self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+    } else {
+      // is a store
+      let data = self.regfile[r_a as usize];
+      self.mem_write8(addr, data as u8);
+    }
+
+    self.pc += 4;
+  }
+
   //fn branch(&mut self, args : u32) {
   //  let condition = args >> 7;
   //  let imm = Self::sign_ext_7(args & 0x7F);
@@ -517,39 +784,14 @@ impl Emulator {
   //  }
   //}
 //
-  //fn jalr_or_exc(&mut self, args : u32) {
-  //  let exc_code = args & 0x007F;
-  //  if exc_code != 0 {
-  //    // this is an exception
-  //    match exc_code {
-  //      0x70 => {
-  //        // this is a sys EXIT
-  //        self.halted = true;
-  //      },
-  //      0x71 => {
-  //        // this is a sys PUTCHAR
-  //        // print the character in r3
-  //        let character = char::from_u32(u32::from(self.regfile[3])).unwrap();
-  //        print!("{}", character);
-  //        self.pc += 1;
-  //      },
-  //      _ => panic!("Invalid Exception code")
-  //    }
-  //  } else {
-  //    // this is a jalr
-  //    // branch to address in r_b, store pc + 1 in r_a
-  //    let r_a = args >> 10;
-  //    let r_b = (args >> 7) & 0b111;
-//
-  //    let tmp = self.pc + 1;
-//
-  //    self.pc = self.regfile[usize::from(r_b)];
-//
-  //    if r_a != 0 {
-  //      self.regfile[usize::from(r_a)] = tmp;
-  //    }
-  //  }
-  //}
+
+  fn branch_imm(&mut self, instr : u32){
+    
+  }
+
+  fn branch_absolute(&mut self, instr : u32){
+    
+  }
 
   fn branch_relative(&mut self, instr : u32){
     let op = (instr >> 22) & 0x1F;
