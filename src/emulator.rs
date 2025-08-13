@@ -163,7 +163,7 @@ impl Emulator {
       },
       7 => {
         // set carry flag
-        self.flags[0] = (if r_c > 0 {r_b >> (32 - r_c)} else {0}) != 0;
+        self.flags[0] = r_b >> if r_c > 0 {32 - r_c} else {0} != 0;
         r_b << r_c // lsl
       },
       8 => {
@@ -266,7 +266,7 @@ impl Emulator {
       self.regfile[r_a as usize] = result;
     }
     
-    // self.update_flags(result, r_b, r_c);
+    self.update_flags(result, r_b, r_c);
 
     self.pc += 4;
 
@@ -440,7 +440,7 @@ impl Emulator {
       self.regfile[r_a as usize] = result;
     }
     
-    // self.update_flags(result, r_b, r_c);
+    self.update_flags(result, r_b, imm);
 
     self.pc += 4;
   }
@@ -751,63 +751,126 @@ impl Emulator {
     self.pc += 4;
   }
 
-  //fn branch(&mut self, args : u32) {
-  //  let condition = args >> 7;
-  //  let imm = Self::sign_ext_7(args & 0x7F);
-//
-  //  let branch = match condition {
-  //    0 => self.flags[1], // bz / beq
-  //    1 => !self.flags[1] && !self.flags[2], // bp
-  //    2 => self.flags[2], // bn
-  //    3 => self.flags[0], // bc
-  //    4 => self.flags[3], // bo
-  //    5 => !self.flags[1], // bnz / bne
-  //    6 => true, // jmp
-  //    7 => !self.flags[0], // bnc
-  //    8 => self.flags[2] == self.flags[3] && !self.flags[1], // bg
-  //    9 => self.flags[2] == self.flags[3], // bge
-  //    10 => self.flags[2] != self.flags[3] && !self.flags[1], // bl
-  //    11 => self.flags[2] != self.flags[3] || self.flags[1], // ble
-//
-  //    // TODO: figure out why these don't match the ROM
-  //    12 => !self.flags[1] && self.flags[0], // ba
-  //    13 => self.flags[0] || self.flags[1], // bae
-  //    14 => !self.flags[0] && !self.flags[1], // bb
-  //    15 => !self.flags[0] || self.flags[1], // bbe
-  //    _ => false
-  //  };
-//
-  //  if branch {
-  //    self.pc = u16::wrapping_add(self.pc, u16::wrapping_add(1 , imm));
-  //  } else {
-  //    self.pc += 1;
-  //  }
-  //}
-//
-
   fn branch_imm(&mut self, instr : u32){
-    
+    // instruction format is
+    // 01100?????iiiiiiiiiiiiiiiiiiiiii
+    // op (5 bits) | op (5 bits) | imm (22 bits)
+    let op = (instr >> 22) & 0x1F;
+    let imm = instr & 0x3FFFFF;
+
+    // sign extend
+    let imm = imm | (0xFFC00000 * ((imm >> 21) & 1));
+
+    let branch = match op {
+      0 => true, // br
+      1 => self.flags[1], // bz
+      2 => !self.flags[1], // bnz
+      3 => self.flags[2], // bs
+      4 => !self.flags[2], // bns
+      5 => self.flags[0], // bc
+      6 => !self.flags[0], // bnc
+      7 => self.flags[3], // bo
+      8 => !self.flags[3], // bno
+      9 => !self.flags[1] && !self.flags[2], // bps
+      10 => self.flags[1] || self.flags[2], // bnps
+      11 => self.flags[2] == self.flags[3] && !self.flags[1], // bg
+      12 => self.flags[2] == self.flags[3], // bge
+      13 => self.flags[2] != self.flags[3] && !self.flags[1], // bl
+      14 => self.flags[2] != self.flags[3] || self.flags[1], // ble
+      15 => !self.flags[1] && self.flags[0], // ba
+      16 => self.flags[0] || self.flags[1], // bae
+      17 => !self.flags[0] && !self.flags[1], // bb
+      18 => !self.flags[0] || self.flags[1], // bbe
+      _ => panic!("Unrecognized branch instruction")
+    };
+
+    if branch {
+      self.pc = u32::wrapping_add(self.pc, u32::wrapping_add(4 , imm));
+    } else {
+      self.pc += 4;
+    }
+
   }
 
   fn branch_absolute(&mut self, instr : u32){
-    
-  }
-
-  fn branch_relative(&mut self, instr : u32){
+    // instruction format is
+    // 01101?????xxxxxxxxxxxxaaaaabbbbb
+    // op (5 bits) | op (5 bits) | unused (12 bits) | r_a (5 bits) | r_b (5 bits)
     let op = (instr >> 22) & 0x1F;
     let r_a = (instr >> 5) & 0x1F;
     let r_b = instr & 0x1F;
 
+    // get address
     let r_b = self.regfile[r_b as usize];
 
     let branch = match op {
-      0 => true,
-      _ => panic!("Unrecognized branch code")
+      0 => true, // br
+      1 => self.flags[1], // bz
+      2 => !self.flags[1], // bnz
+      3 => self.flags[2], // bs
+      4 => !self.flags[2], // bns
+      5 => self.flags[0], // bc
+      6 => !self.flags[0], // bnc
+      7 => self.flags[3], // bo
+      8 => !self.flags[3], // bno
+      9 => !self.flags[1] && !self.flags[2], // bps
+      10 => self.flags[1] || self.flags[2], // bnps
+      11 => self.flags[2] == self.flags[3] && !self.flags[1], // bg
+      12 => self.flags[2] == self.flags[3], // bge
+      13 => self.flags[2] != self.flags[3] && !self.flags[1], // bl
+      14 => self.flags[2] != self.flags[3] || self.flags[1], // ble
+      15 => !self.flags[1] && self.flags[0], // ba
+      16 => self.flags[0] || self.flags[1], // bae
+      17 => !self.flags[0] && !self.flags[1], // bb
+      18 => !self.flags[0] || self.flags[1], // bbe
+      _ => panic!("Unrecognized branch instruction")
     };
 
     if branch {
       self.regfile[r_a as usize] = self.pc + 4;
-      self.pc += r_b + 4;
+      self.pc = r_b;
+    } else {
+      self.pc += 4;
+    }
+  }
+
+  fn branch_relative(&mut self, instr : u32){
+    // instruction format is
+    // 01110?????xxxxxxxxxxxxaaaaabbbbb
+    // op (5 bits) | op (5 bits) | unused (12 bits) | r_a (5 bits) | r_b (5 bits)
+    let op = (instr >> 22) & 0x1F;
+    let r_a = (instr >> 5) & 0x1F;
+    let r_b = instr & 0x1F;
+
+    // get address
+    let r_b = self.regfile[r_b as usize];
+
+    let branch = match op {
+      0 => true, // br
+      1 => self.flags[1], // bz
+      2 => !self.flags[1], // bnz
+      3 => self.flags[2], // bs
+      4 => !self.flags[2], // bns
+      5 => self.flags[0], // bc
+      6 => !self.flags[0], // bnc
+      7 => self.flags[3], // bo
+      8 => !self.flags[3], // bno
+      9 => !self.flags[1] && !self.flags[2], // bps
+      10 => self.flags[1] || self.flags[2], // bnps
+      11 => self.flags[2] == self.flags[3] && !self.flags[1], // bg
+      12 => self.flags[2] == self.flags[3], // bge
+      13 => self.flags[2] != self.flags[3] && !self.flags[1], // bl
+      14 => self.flags[2] != self.flags[3] || self.flags[1], // ble
+      15 => !self.flags[1] && self.flags[0], // ba
+      16 => self.flags[0] || self.flags[1], // bae
+      17 => !self.flags[0] && !self.flags[1], // bb
+      18 => !self.flags[0] || self.flags[1], // bbe
+      _ => panic!("Unrecognized branch instruction")
+    };
+
+    if branch {
+      self.regfile[r_a as usize] = self.pc + 4;
+      self.pc = u32::wrapping_add(self.pc, u32::wrapping_add(4, r_b));
     } else {
       self.pc += 4;
     }
@@ -825,18 +888,17 @@ impl Emulator {
     }
   }
 
-  //fn update_flags(&mut self, result : u16, lhs : u16, rhs : u16) {
-  //  let result_sign = result >> 15;
-  //  let lhs_sign = lhs >> 15;
-  //  let rhs_sign = rhs >> 15;
-//
-  //  // set the zero flag
-  //  self.flags[1] = if result == 0 {true} else {false};
-  //  // set the sign flag
-  //  self.flags[2] = if result_sign != 0 {true} else {false};
-  //  // set the overflow flag
-  //  let ovrflw_condition = (result_sign != lhs_sign) && (lhs_sign == rhs_sign);
-  //  self.flags[3] = if ovrflw_condition {true} else {false};
-  //}
+  fn update_flags(&mut self, result : u32, lhs : u32, rhs : u32) {
+    let result_sign = result >> 31;
+    let lhs_sign = lhs >> 31;
+    let rhs_sign = rhs >> 31;
+
+    // set the zero flag
+    self.flags[1] = result == 0;
+    // set the sign flag
+    self.flags[2] = result_sign != 0;
+    // set the overflow flag
+    self.flags[3] = (result_sign != lhs_sign) && (lhs_sign == rhs_sign);
+  }
 
 }
