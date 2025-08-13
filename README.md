@@ -11,3 +11,5 @@ Run the emulator with `cargo run -- <file>.hex`
 ## Testing
 
 Run all tests with `cargo test`
+
+Test assume the file structure is the same as how things are orginized in the [Dioptase repo](https://github.com/b-Rocks2718/Dioptase/tree/main). This allows the tests to access the assembler.
