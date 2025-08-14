@@ -195,15 +195,14 @@ impl Emulator {
         let carry = if r_c > 0 {r_b >> (32 - r_c)} else {0};
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (r_b << r_c) | if r_c > 0 {old_carry << (r_c - 1)} else {0} | (carry >> 1) // lslc
+        (r_b << r_c) | if r_c > 0 {old_carry << (r_c - 1)} else {0} // lslc
       },
       13 => {
         // set carry flag
         let carry = r_b & ((1 << r_c) - 1);
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (r_b >> r_c) | (old_carry << if r_c > 0 {32 - r_c} else {0}) 
-        | (carry << if r_c > 1 {33 - r_c} else {0}) // lsrc
+        (r_b >> r_c) | (old_carry << if r_c > 0 {32 - r_c} else {0}) // lsrc
       },
       14 => {
         // add
@@ -276,7 +275,7 @@ impl Emulator {
     match op {
       0..=6 => {
         // Bitwise op
-        (imm & 0xFF) << ((imm >> 8) & 3)
+        (imm & 0xFF) << (8 * ((imm >> 8) & 3))
       },
       7..=13 => {
         // Shift op
@@ -369,15 +368,14 @@ impl Emulator {
         let carry = r_b >> if imm > 0 {32 - imm} else {0};
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (r_b << imm) | (old_carry << if imm > 0 {imm - 1} else {0}) | (carry >> 1) // lslc
+        (r_b << imm) | (old_carry << if imm > 0 {imm - 1} else {0}) // lslc
       },
       13 => {
         // set carry flag
         let carry = r_b & ((1 << imm) - 1);
         let old_carry = u32::from(self.flags[0]);
         self.flags[0] = carry != 0;
-        (r_b >> imm) | (old_carry << if imm > 0 {32 - imm} else {0})
-         | (carry << if imm > 1 {33 - imm} else {0}) // lsrc
+        (r_b >> imm) | (old_carry << if imm > 0 {32 - imm} else {0}) // lsrc
       },
       14 => {
         // add

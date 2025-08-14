@@ -1,4 +1,6 @@
 _start:
   movi r3 0xAAAA
-  lsl  r3 r3 3
+  movi r1, 2
+  lsl  r3 r3 r1
+  lsl  r3 r3 1
   sys  EXIT # should return 0x55550

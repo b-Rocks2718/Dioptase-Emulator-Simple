@@ -6,6 +6,7 @@ _start:
   # add and store result in r2 + r3
   add  r2 r4 r6
   addc r3 r5 r7
+  addc r3 r3 1
   # result should be 0xAAAAAAACFFFFFFFE
-  # r3 should have 0xAAAAAAAC
+  # r3 should have 0xAAAAAAAD
   sys  EXIT
