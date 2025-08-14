@@ -254,3 +254,7 @@ fn call() {
   run_test("tests/asm/call.s", 42);
 }
 
+#[test]
+fn origin() {
+  run_test("tests/asm/origin.s", 21);
+}

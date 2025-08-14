@@ -17,6 +17,7 @@ where P: AsRef<Path>, {
     Ok(io::BufReader::new(file).lines())
 }
 
+
 impl Emulator {
   pub fn new(path : String) -> Emulator {
 
@@ -27,6 +28,23 @@ impl Emulator {
     // Consumes the iterator, returns an (Optional) String
     let mut pc : u32 = 0;
     for line in lines.map_while(Result::ok) {
+      
+      let bytes = line.as_bytes();
+      if bytes.is_empty() {
+        continue;
+      }
+
+      match bytes[0] {
+        b'@' => {
+          // Slice starting from index 1 (safe for ASCII)
+          let addr_str = &line[1..];
+          let addr = u32::from_str_radix(addr_str, 10).unwrap();
+          pc = addr;
+          continue;
+        }
+        _ => ()
+      }
+
       // read one instruction
       let instruction = u32::from_str_radix(&line, 16).expect("Error parsing hex file");
 
@@ -39,7 +57,6 @@ impl Emulator {
       pc += 4;
     }
     
-
     Emulator {
       regfile: [0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
