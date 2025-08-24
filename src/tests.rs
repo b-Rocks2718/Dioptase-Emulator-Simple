@@ -135,7 +135,7 @@ fn mem_wa() {
 
 #[test]
 fn mem_wr() {
-  run_test("tests/asm/mem_wr.s", 0xFFFFFFFF);
+  run_test("tests/asm/mem_wr.s", 0x25);
 }
 
 #[test]
