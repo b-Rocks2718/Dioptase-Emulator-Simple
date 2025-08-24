@@ -38,7 +38,7 @@ impl Emulator {
         b'@' => {
           // Slice starting from index 1 (safe for ASCII)
           let addr_str = &line[1..];
-          let addr = u32::from_str_radix(addr_str, 10).unwrap();
+          let addr = u32::from_str_radix(addr_str, 16).expect("Invalid address") * 4;
           pc = addr;
           continue;
         }
