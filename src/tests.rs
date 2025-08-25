@@ -145,7 +145,7 @@ fn mem_da() {
 
 #[test]
 fn mem_dr() {
-  run_test("tests/asm/mem_dr.s", 0xFFFF);
+  run_test("tests/asm/mem_dr.s", 0x11114444);
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn mem_ba() {
 
 #[test]
 fn mem_br() {
-  run_test("tests/asm/mem_br.s", 0xFF);
+  run_test("tests/asm/mem_br.s", 0x11111144);
 }
 
 #[test]

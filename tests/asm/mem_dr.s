@@ -1,10 +1,11 @@
-DATA_1: .fill 0xFFFFFFFF
+DATA_1: .fill 0x22222222
 
 _start:
   ld   r13, [DATA_1]
   sd   r13, [DATA_2]
-  ld   r3,  [DATA_2]
-  sys  EXIT     # should return 0xFFFF
+  lw   r3,  [DATA_2]
+  add  r3, r13, r3
+  sys  EXIT     # should return 0x11114444
 
 .space 277
-DATA_2: .fill 38
+DATA_2: .fill 0x11111111
