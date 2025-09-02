@@ -892,7 +892,7 @@ impl Emulator {
   }
 
   fn syscall(&mut self, instr : u32){
-    let imm = instr & 0x7F;
+    let imm = instr & 0xFF;
 
     match imm {
       0 => {
