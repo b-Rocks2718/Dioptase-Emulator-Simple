@@ -895,7 +895,7 @@ impl Emulator {
     let imm = instr & 0xFF;
 
     match imm {
-      0 => {
+      1 => {
         // sys EXIT
         self.halted = true;
       }
