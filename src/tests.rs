@@ -114,6 +114,11 @@ fn subb() {
 }
 
 #[test]
+fn sub_overflow_sets_flag() {
+  run_test("tests/asm/sub_overflow.s", 1);
+}
+
+#[test]
 fn mul() {
   run_test("tests/asm/mul.s", 42);
 }
@@ -156,6 +161,11 @@ fn mem_ba() {
 #[test]
 fn mem_br() {
   run_test("tests/asm/mem_br.s", 0x11111144);
+}
+
+#[test]
+fn r0_load_invariant() {
+  run_test("tests/asm/r0_load_invariant.s", 0);
 }
 
 #[test]

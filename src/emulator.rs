@@ -69,18 +69,19 @@ impl Emulator {
     }
   }
 
+  // memory operations must be aligned
   fn mem_write8(&mut self, addr : u32, data : u8) {
     self.ram.insert(addr, data);
   }
 
   fn mem_write16(&mut self, addr : u32, data : u16) {
-    self.mem_write8(addr, data as u8);
-    self.mem_write8(addr + 1, (data >> 8) as u8);
+    self.mem_write8(addr & 0xFFFFFFFE, data as u8);
+    self.mem_write8((addr & 0xFFFFFFFE) + 1, (data >> 8) as u8);
   }
 
   fn mem_write32(&mut self, addr : u32, data : u32) {
-    self.mem_write16(addr, data as u16);
-    self.mem_write16(addr + 2, (data >> 16) as u16);
+    self.mem_write16(addr & 0xFFFFFFFC, data as u16);
+    self.mem_write16((addr & 0xFFFFFFFC) + 2, (data >> 16) as u16);
   }
 
   fn mem_read8(&self, addr : u32) -> u8 {
@@ -92,17 +93,18 @@ impl Emulator {
   }
 
   fn mem_read16(&self, addr : u32) -> u16 {
-    (u16::from(self.mem_read8(addr + 1)) << 8) + 
-    u16::from(self.mem_read8(addr))
+    (u16::from(self.mem_read8((addr & 0xFFFFFFFE) + 1)) << 8) + 
+    u16::from(self.mem_read8(addr & 0xFFFFFFFE))
   }
 
   fn mem_read32(&self, addr : u32) -> u32 {
-    (u32::from(self.mem_read16(addr + 2)) << 16) + 
-    u32::from(self.mem_read16(addr))
+    (u32::from(self.mem_read16((addr & 0xFFFFFFFC) + 2)) << 16) +
+    u32::from(self.mem_read16(addr & 0xFFFFFFFC))
   }
 
   pub fn run(&mut self) -> u32 {
     while !self.halted {
+      assert!(self.pc % 4 == 0, "PC is not aligned");
       self.execute(self.mem_read32(self.pc));
     }
 
@@ -282,7 +284,7 @@ impl Emulator {
       self.regfile[r_a as usize] = result;
     }
     
-    self.update_flags(result, r_b, r_c);
+    self.update_flags(result, r_b, r_c, op);
 
     self.pc += 4;
 
@@ -292,11 +294,11 @@ impl Emulator {
     match op {
       0..=6 => {
         // Bitwise op
-        (imm & 0xFF) << (8 * ((imm >> 8) & 3))
+        (imm & 0xFF) << (8 * ((imm >> 8) & 3)) // zero extend and shift
       },
       7..=13 => {
         // Shift op
-        imm & 0x1F
+        imm & 0x1F // zero extend
       },
       14..=18 => {
         // Arithmetic op
@@ -455,7 +457,7 @@ impl Emulator {
       self.regfile[r_a as usize] = result;
     }
     
-    self.update_flags(result, r_b, imm);
+    self.update_flags(result, r_b, imm, op);
 
     self.pc += 4;
   }
@@ -480,8 +482,8 @@ impl Emulator {
     let r_a = (instr >> 22) & 0x1F;
     let r_b = (instr >> 17) & 0x1F;
     let is_load = ((instr >> 16) & 1) != 0; // is this a load? else is store
-    let y = (instr >> 14) & 3;
-    let z = (instr >> 12) & 3;
+    let y = (instr >> 14) & 3; // offset type: 0 = signed offset, 1 = preinc, 2 = postinc, 3 = reserved
+    let z = (instr >> 12) & 3; // shift amount
     let imm = instr & 0xFFF;
 
     // sign extend imm
@@ -496,7 +498,9 @@ impl Emulator {
     let addr = if y == 2 {r_b_out} else {u32::wrapping_add(r_b_out, imm)}; // check for postincrement
 
     if is_load {
-      self.regfile[r_a as usize] = self.mem_read32(addr);
+      if r_a != 0 {
+        self.regfile[r_a as usize] = self.mem_read32(addr);
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -533,7 +537,9 @@ impl Emulator {
     let addr = u32::wrapping_add(addr, 4);
 
     if is_load {
-      self.regfile[r_a as usize] = self.mem_read32(addr);
+      if r_a != 0 {
+        self.regfile[r_a as usize] = self.mem_read32(addr);
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -560,7 +566,9 @@ impl Emulator {
     let addr = u32::wrapping_add(addr, 4);
 
     if is_load {
-      self.regfile[r_a as usize] = self.mem_read32(addr);
+      if r_a != 0 {
+        self.regfile[r_a as usize] = self.mem_read32(addr);
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -594,7 +602,9 @@ impl Emulator {
     let addr = if y == 2 {r_b_out} else {u32::wrapping_add(r_b_out, imm)}; // check for postincrement
 
     if is_load {
-      self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+      if r_a != 0 {
+        self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -631,7 +641,9 @@ impl Emulator {
     let addr = u32::wrapping_add(addr, 4);
 
     if is_load {
-      self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+      if r_a != 0 {
+        self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -658,7 +670,9 @@ impl Emulator {
     let addr = u32::wrapping_add(addr, 4);
 
     if is_load {
-      self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+      if r_a != 0 {
+        self.regfile[r_a as usize] = u32::from(self.mem_read16(addr));
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -692,7 +706,9 @@ impl Emulator {
     let addr = if y == 2 {r_b_out} else {u32::wrapping_add(r_b_out, imm)}; // check for postincrement
 
     if is_load {
-      self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+      if r_a != 0 {
+        self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -729,7 +745,9 @@ impl Emulator {
     let addr = u32::wrapping_add(addr, 4);
 
     if is_load {
-      self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+      if r_a != 0 {
+        self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -756,7 +774,9 @@ impl Emulator {
     let addr = u32::wrapping_add(addr, 4);
 
     if is_load {
-      self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+      if r_a != 0 {
+        self.regfile[r_a as usize] = u32::from(self.mem_read8(addr));
+      }
     } else {
       // is a store
       let data = self.regfile[r_a as usize];
@@ -842,7 +862,9 @@ impl Emulator {
     };
 
     if branch {
-      self.regfile[r_a as usize] = self.pc + 4;
+      if r_a != 0 {
+        self.regfile[r_a as usize] = self.pc + 4;
+      }
       self.pc = r_b;
     } else {
       self.pc += 4;
@@ -884,7 +906,9 @@ impl Emulator {
     };
 
     if branch {
-      self.regfile[r_a as usize] = self.pc + 4;
+      if r_a != 0 {
+        self.regfile[r_a as usize] = self.pc + 4;
+      }
       self.pc = u32::wrapping_add(self.pc, u32::wrapping_add(4, r_b));
     } else {
       self.pc += 4;
@@ -903,17 +927,24 @@ impl Emulator {
     }
   }
 
-  fn update_flags(&mut self, result : u32, lhs : u32, rhs : u32) {
+  // carry flag handled separately in each alu operation
+  fn update_flags(&mut self, result : u32, lhs : u32, rhs : u32, op : u32) {
     let result_sign = result >> 31;
     let lhs_sign = lhs >> 31;
     let rhs_sign = rhs >> 31;
+
+    let is_sub = op == 16 || op == 17;
 
     // set the zero flag
     self.flags[1] = result == 0;
     // set the sign flag
     self.flags[2] = result_sign != 0;
     // set the overflow flag
-    self.flags[3] = (result_sign != lhs_sign) && (lhs_sign == rhs_sign);
+    self.flags[3] = if is_sub {
+      (result_sign != lhs_sign) && (lhs_sign != rhs_sign)
+    } else {
+      (result_sign != lhs_sign) && (lhs_sign == rhs_sign)
+    }
   }
 
 }
