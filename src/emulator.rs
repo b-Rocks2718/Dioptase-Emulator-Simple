@@ -75,11 +75,19 @@ impl Emulator {
   }
 
   fn mem_write16(&mut self, addr : u32, data : u16) {
+    if (addr & 1) != 0 {
+      // unaligned access
+      println!("Warning: unaligned memory access at {:08x}", addr);
+    }
     self.mem_write8(addr & 0xFFFFFFFE, data as u8);
     self.mem_write8((addr & 0xFFFFFFFE) + 1, (data >> 8) as u8);
   }
 
   fn mem_write32(&mut self, addr : u32, data : u32) {
+    if (addr & 3) != 0 {
+      // unaligned access
+      println!("Warning: unaligned memory access at {:08x}", addr);
+    }
     self.mem_write16(addr & 0xFFFFFFFC, data as u16);
     self.mem_write16((addr & 0xFFFFFFFC) + 2, (data >> 16) as u16);
   }
@@ -93,11 +101,19 @@ impl Emulator {
   }
 
   fn mem_read16(&self, addr : u32) -> u16 {
+    if (addr & 1) != 0 {
+      // unaligned access
+      println!("Warning: unaligned memory access at {:08x}", addr);
+    }
     (u16::from(self.mem_read8((addr & 0xFFFFFFFE) + 1)) << 8) + 
     u16::from(self.mem_read8(addr & 0xFFFFFFFE))
   }
 
   fn mem_read32(&self, addr : u32) -> u32 {
+    if (addr & 3) != 0 {
+      // unaligned access
+      println!("Warning: unaligned memory access at {:08x}", addr);
+    }
     (u32::from(self.mem_read16((addr & 0xFFFFFFFC) + 2)) << 16) +
     u32::from(self.mem_read16(addr & 0xFFFFFFFC))
   }
