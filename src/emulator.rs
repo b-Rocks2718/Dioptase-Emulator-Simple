@@ -507,7 +507,7 @@ impl Emulator {
       self.mem_write32(addr, data);
     }
 
-    if y == 1 || y == 2 {
+    if (y == 1 || y == 2) && r_b != 0 {
       // pre or post increment
       self.regfile[r_b as usize] = u32::wrapping_add(r_b_out, imm);
     }
@@ -611,7 +611,7 @@ impl Emulator {
       self.mem_write16(addr, data as u16);
     }
 
-    if y == 1 || y == 2 {
+    if (y == 1 || y == 2) && r_b != 0 {
       // pre or post increment
       self.regfile[r_b as usize] = u32::wrapping_add(r_b_out, imm);
     }
@@ -715,7 +715,7 @@ impl Emulator {
       self.mem_write8(addr, data as u8);
     }
 
-    if y == 1 || y == 2 {
+    if (y == 1 || y == 2) && r_b != 0 {
       // pre or post increment
       self.regfile[r_b as usize] = u32::wrapping_add(r_b_out, imm);
     }
