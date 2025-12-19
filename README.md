@@ -6,7 +6,8 @@ It assumes all addresses have been mapped by the TLB (a segfault will never happ
 
 ## Usage
 
-Run the emulator with `cargo run -- <file>.hex`
+Run the emulator with `cargo run -- <file>.hex`  
+The value in r1 when the program terminates is printed.
 
 ## Testing
 

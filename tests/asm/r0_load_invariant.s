@@ -3,5 +3,5 @@ _start:
   movi r2 0x12345678
   swa  r2 [r1, 0]   # store a word
   lwa  r0 [r1, 0]   # attempt to load into r0; should be ignored
-  add  r3 r0 r0     # r3 should still be zero
+  add  r1 r0 r0     # r1 should still be zero
   sys  EXIT

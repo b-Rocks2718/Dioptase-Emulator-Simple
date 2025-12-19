@@ -125,7 +125,7 @@ impl Emulator {
     }
 
     // return the value in r3
-    self.regfile[3]
+    self.regfile[1]
   }
 
   fn execute(&mut self, instr : u32) {
