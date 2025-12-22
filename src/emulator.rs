@@ -3,12 +3,16 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 
+mod debugger;
+
 pub struct Emulator {
   regfile : [u32; 32],
   ram : HashMap<u32, u8>,
   pc : u32,
   flags : [bool; 4], // flags are: carry | zero | sign | overflow
-  halted : bool
+  halted : bool,
+  watchpoints: Vec<Watchpoint>,
+  watchpoint_hit: Option<WatchpointHit>,
 }
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
@@ -17,46 +21,118 @@ where P: AsRef<Path>, {
     Ok(io::BufReader::new(file).lines())
 }
 
+// Label -> address list (labels can appear multiple times across sections).
+type LabelMap = HashMap<String, Vec<u32>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WatchKind {
+  Read,
+  Write,
+  ReadWrite,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WatchAccess {
+  Read,
+  Write,
+}
+
+// Single-byte watchpoints tracked by exact address.
+#[derive(Clone, Copy, Debug)]
+struct Watchpoint {
+  addr: u32,
+  kind: WatchKind,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct WatchpointHit {
+  addr: u32,
+  access: WatchAccess,
+  value: u8,
+}
+
+fn parse_hex_u32(token: &str) -> Option<u32> {
+  let s = token.trim();
+  let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+  if s.is_empty() {
+    return None;
+  }
+  u32::from_str_radix(s, 16).ok()
+}
+
+fn add_label(labels: &mut LabelMap, name: &str, addr: u32) {
+  let entry = labels.entry(name.to_string()).or_default();
+  if !entry.contains(&addr) {
+    entry.push(addr);
+  }
+}
+
+// Parse assembler debug label lines: "#label <name> <addr>".
+fn parse_label_line(line: &str, labels: &mut LabelMap) -> bool {
+  let mut parts = line.split_whitespace();
+  match parts.next() {
+    Some("#label") => {
+      if let (Some(name), Some(addr_str)) = (parts.next(), parts.next()) {
+        if let Some(addr) = parse_hex_u32(addr_str) {
+          add_label(labels, name, addr);
+          return true;
+        }
+      }
+    }
+    _ => {}
+  }
+  false
+}
+
+// Load hex (or .debug) program and collect any embedded labels.
+fn load_program(path: &str) -> (HashMap<u32, u8>, LabelMap) {
+  let mut instructions = HashMap::new();
+  let mut labels = LabelMap::new();
+
+  let lines = read_lines(path).expect("Couldn't open input file");
+  let mut pc: u32 = 0;
+  for line in lines.map_while(Result::ok) {
+    let line = line.trim();
+    if line.is_empty() {
+      continue;
+    }
+
+    if line.starts_with('#') {
+      // Debug label lines are prefixed with '#'.
+      parse_label_line(line, &mut labels);
+      continue;
+    }
+    if line.starts_with(';') || line.starts_with("//") {
+      continue;
+    }
+
+    if let Some(rest) = line.strip_prefix('@') {
+      let addr_str = rest.trim();
+      let addr = u32::from_str_radix(addr_str, 16).expect("Invalid address") * 4;
+      pc = addr;
+      continue;
+    }
+
+    let instruction = u32::from_str_radix(line, 16).expect("Error parsing hex file");
+
+    instructions.insert(pc, instruction as u8);
+    instructions.insert(pc + 1, (instruction >> 8) as u8);
+    instructions.insert(pc + 2, (instruction >> 16) as u8);
+    instructions.insert(pc + 3, (instruction >> 24) as u8);
+
+    pc += 4;
+  }
+
+  (instructions, labels)
+}
 
 impl Emulator {
   pub fn new(path : String) -> Emulator {
+    let (instructions, _labels) = load_program(&path);
+    Emulator::from_instructions(instructions)
+  }
 
-    let mut instructions = HashMap::new();
-    
-    // read in binary file
-    let lines = read_lines(path).expect("Couldn't open input file");
-    // Consumes the iterator, returns an (Optional) String
-    let mut pc : u32 = 0;
-    for line in lines.map_while(Result::ok) {
-      
-      let bytes = line.as_bytes();
-      if bytes.is_empty() {
-        continue;
-      }
-
-      match bytes[0] {
-        b'@' => {
-          // Slice starting from index 1 (safe for ASCII)
-          let addr_str = &line[1..];
-          let addr = u32::from_str_radix(addr_str, 16).expect("Invalid address") * 4;
-          pc = addr;
-          continue;
-        }
-        _ => ()
-      }
-
-      // read one instruction
-      let instruction = u32::from_str_radix(&line, 16).expect("Error parsing hex file");
-
-      // write one instruction
-      instructions.insert(pc, instruction as u8);
-      instructions.insert(pc + 1, (instruction >> 8) as u8);
-      instructions.insert(pc + 2, (instruction >> 16) as u8);
-      instructions.insert(pc + 3, (instruction >> 24) as u8);
-
-      pc += 4;
-    }
-    
+  pub fn from_instructions(instructions: HashMap<u32, u8>) -> Emulator {
     Emulator {
       regfile: [0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
@@ -65,12 +141,62 @@ impl Emulator {
       ram: instructions,
       pc: 0,
       flags: [false, false, false, false],
-      halted: false
+      halted: false,
+      watchpoints: Vec::new(),
+      watchpoint_hit: None,
     }
+  }
+
+  // Record the first watchpoint hit so the debugger can stop after stepping.
+  fn maybe_watch(&mut self, addr: u32, access: WatchAccess, value: u8) {
+    if self.watchpoint_hit.is_some() || self.watchpoints.is_empty() {
+      return;
+    }
+    for wp in &self.watchpoints {
+      if wp.addr == addr {
+        let matches = match (wp.kind, access) {
+          (WatchKind::Read, WatchAccess::Read) => true,
+          (WatchKind::Write, WatchAccess::Write) => true,
+          (WatchKind::ReadWrite, _) => true,
+          _ => false,
+        };
+        if matches {
+          self.watchpoint_hit = Some(WatchpointHit { addr, access, value });
+          break;
+        }
+      }
+    }
+  }
+
+  // Debug reads bypass watchpoints so inspection doesn't change execution flow.
+  fn read_debug8(&self, addr: u32) -> u8 {
+    *self.ram.get(&addr).unwrap_or(&0)
+  }
+
+  fn read_debug16(&self, addr: u32) -> u16 {
+    if (addr & 1) != 0 {
+      println!("Warning: unaligned memory access at {:08x}", addr);
+    }
+    (u16::from(self.read_debug8((addr & 0xFFFFFFFE) + 1)) << 8) +
+    u16::from(self.read_debug8(addr & 0xFFFFFFFE))
+  }
+
+  fn read_debug32(&self, addr: u32) -> u32 {
+    if (addr & 3) != 0 {
+      println!("Warning: unaligned memory access at {:08x}", addr);
+    }
+    (u32::from(self.read_debug16((addr & 0xFFFFFFFC) + 2)) << 16) +
+    u32::from(self.read_debug16(addr & 0xFFFFFFFC))
+  }
+
+  // Instruction fetch uses debug reads to avoid triggering watchpoints.
+  fn fetch32(&self, addr: u32) -> u32 {
+    self.read_debug32(addr)
   }
 
   // memory operations must be aligned
   fn mem_write8(&mut self, addr : u32, data : u8) {
+    self.maybe_watch(addr, WatchAccess::Write, data);
     self.ram.insert(addr, data);
   }
 
@@ -92,15 +218,17 @@ impl Emulator {
     self.mem_write16((addr & 0xFFFFFFFC) + 2, (data >> 16) as u16);
   }
 
-  fn mem_read8(&self, addr : u32) -> u8 {
-    if self.ram.contains_key(&addr) {
+  fn mem_read8(&mut self, addr : u32) -> u8 {
+    let value = if self.ram.contains_key(&addr) {
       self.ram[&addr]
     } else {
       0
-    }
+    };
+    self.maybe_watch(addr, WatchAccess::Read, value);
+    value
   }
 
-  fn mem_read16(&self, addr : u32) -> u16 {
+  fn mem_read16(&mut self, addr : u32) -> u16 {
     if (addr & 1) != 0 {
       // unaligned access
       println!("Warning: unaligned memory access at {:08x}", addr);
@@ -109,7 +237,7 @@ impl Emulator {
     u16::from(self.mem_read8(addr & 0xFFFFFFFE))
   }
 
-  fn mem_read32(&self, addr : u32) -> u32 {
+  fn mem_read32(&mut self, addr : u32) -> u32 {
     if (addr & 3) != 0 {
       // unaligned access
       println!("Warning: unaligned memory access at {:08x}", addr);
@@ -121,7 +249,7 @@ impl Emulator {
   pub fn run(&mut self) -> u32 {
     while !self.halted {
       assert!(self.pc % 4 == 0, "PC is not aligned");
-      self.execute(self.mem_read32(self.pc));
+      self.execute(self.fetch32(self.pc));
     }
 
     // return the value in r3
