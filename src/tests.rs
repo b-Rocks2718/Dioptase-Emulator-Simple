@@ -164,6 +164,16 @@ fn mem_br() {
 }
 
 #[test]
+fn atomic_fadd() {
+  run_test("tests/asm/atomic_fadd.s", 0x6D);
+}
+
+#[test]
+fn atomic_swap() {
+  run_test("tests/asm/atomic_swap.s", 0x164);
+}
+
+#[test]
 fn r0_load_invariant() {
   run_test("tests/asm/r0_load_invariant.s", 0);
 }
