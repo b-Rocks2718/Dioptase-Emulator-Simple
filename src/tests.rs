@@ -6,7 +6,38 @@ use std::process::Command;
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
+use std::sync::Once;
+
+#[cfg(test)]
 use super::*;
+
+#[cfg(test)]
+fn build_assembler() {
+  static BUILD: Once = Once::new();
+  BUILD.call_once(|| {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let asm_dir = manifest.join("../../Dioptase-Assembler");
+    // Build the assembler once so tests can run in clean environments.
+    let status = Command::new("make")
+      .current_dir(asm_dir)
+      .status()
+      .expect("failed to run make for assembler");
+    assert!(status.success(), "assembler build failed");
+  });
+}
+
+#[cfg(test)]
+fn assembler_path() -> PathBuf {
+  let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+  let path = manifest.join("../../Dioptase-Assembler/build/assembler");
+  if path.exists() {
+    return path;
+  }
+  // Build on-demand if the binary isn't present yet.
+  build_assembler();
+  assert!(path.exists(), "assembler not found at {}", path.display());
+  path
+}
 
 #[cfg(test)]
 fn run_test(asm_file : &'static str, expected : u32){
@@ -19,7 +50,8 @@ fn run_test(asm_file : &'static str, expected : u32){
   };
 
   // assemble test case
-  let status = Command::new("../../Dioptase-Assembler/build/assembler")
+  let assembler = assembler_path();
+  let status = Command::new(&assembler)
     .args([asm_file, "-o", hex_file.to_str().unwrap()])
     .status()
     .expect("failed to run assembler");
