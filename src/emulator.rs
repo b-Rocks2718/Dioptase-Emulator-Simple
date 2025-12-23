@@ -476,15 +476,6 @@ impl Emulator {
 
         result as u32
       },
-      18 => {
-        // mul
-        let result = u64::from(r_b) * u64::from(r_c);
-
-        // set the carry flag
-        self.flags[0] = result >> 32 != 0;
-
-        result as u32
-      },
       _ => {
         panic!("Unrecognized ALU operation");
       }
