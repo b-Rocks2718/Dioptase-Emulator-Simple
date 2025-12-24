@@ -59,10 +59,10 @@ fn run_test(asm_file : &'static str, expected : u32){
 
   // execute hex file
   let mut cpu = Emulator::new(hex_file.to_string_lossy().to_string());
-  let result = cpu.run();
+  let result = cpu.run(0);
 
   // check result
-  assert_eq!(result, expected);
+  assert_eq!(result, Some(expected));
 }
 
 #[test]

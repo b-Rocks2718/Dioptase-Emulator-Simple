@@ -246,14 +246,19 @@ impl Emulator {
     u32::from(self.mem_read16(addr & 0xFFFFFFFC))
   }
 
-  pub fn run(&mut self) -> u32 {
+  pub fn run(&mut self, max_iters: u32) -> Option<u32> {
+    let mut cycles: u32 = 0;
     while !self.halted {
       assert!(self.pc % 4 == 0, "PC is not aligned");
       self.execute(self.fetch32(self.pc));
+      cycles = cycles.wrapping_add(1);
+      if max_iters != 0 && cycles > max_iters {
+        return None;
+      }
     }
 
     // return the value in r3
-    self.regfile[1]
+    Some(self.regfile[1])
   }
 
   fn execute(&mut self, instr : u32) {
