@@ -1,7 +1,9 @@
+.text
+.global _start
 _start:
-  add  r4 r0 0x10
+  mov  r4 sp
   movi r5 0x42424242
-  swa  r5 [r4, 0x3FE0] # store at address 0x3FF0
-  lwa  r3 [r0, 0x3FF0]
+  swa  r5 [r4, -0x10] # store at address 0x7FFFFFF0
+  lwa  r3 [r4, -0x10]
   mov  r1, r3
   sys  EXIT     # should return 0x42424242

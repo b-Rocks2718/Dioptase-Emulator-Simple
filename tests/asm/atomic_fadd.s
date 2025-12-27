@@ -1,23 +1,25 @@
+.text
+.global _start
 _start:
-  # Setup: store 5 at absolute addr 0x7F0 using base r4 + 0x7E0.
-  add  r4 r0 0x10
+  # Setup: store 5 at an absolute addr within the stack region (sp - 0x10).
+  mov  r4 sp
   add  r2 r0 5
-  swa  r2 [r4, 0x7E0]
+  swa  r2 [r4, -0x10]
 
   # Absolute fadd: r5 <- old (5), mem <- old + 7 (12).
   add  r6 r0 7
-  fada r5, r6, [r4, 0x7E0]
+  fada r5, r6, [r4, -0x10]
 
-  # PC-relative fadd with base register: r8 <- old (9), mem <- old + 4 (13).
+  # PC-relative fadd: r8 <- old (9), mem <- old + 4 (13).
   add  r7 r0 4
-  fad  r8, r7, [r0, DATA_REL]
+  fad  r8, r7, [DATA_REL]
 
   # PC-relative fadd immediate: r10 <- old (32), mem <- old + 6 (38).
   add  r11 r0 6
   fad  r10, r11, [DATA_IMM]
 
   # Read back updated memory to validate side effects.
-  lwa  r9 [r4, 0x7E0]  # expect 12
+  lwa  r9 [r4, -0x10]  # expect 12
   lw   r12, [DATA_REL] # expect 13
   lw   r13, [DATA_IMM] # expect 38
 
@@ -31,5 +33,6 @@ _start:
   mov  r1, r14
   sys  EXIT     # should return 0x6D
 
+.data
 DATA_REL: .fill 9
 DATA_IMM: .fill 32

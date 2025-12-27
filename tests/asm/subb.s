@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   mov  r4 r0
   mov  r5 r0 # 64 bit integer 0x0000000000000000 stored in r4 + r5

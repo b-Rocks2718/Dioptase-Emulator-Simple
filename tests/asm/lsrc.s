@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   movi r4 0x5557
   movi r3 0x00A0

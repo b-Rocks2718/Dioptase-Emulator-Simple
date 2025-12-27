@@ -29,7 +29,7 @@ fn build_assembler() {
 #[cfg(test)]
 fn assembler_path() -> PathBuf {
   let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-  let path = manifest.join("../../Dioptase-Assembler/build/assembler");
+  let path = manifest.join("../../Dioptase-Assembler/build/basm");
   if path.exists() {
     return path;
   }
@@ -57,12 +57,35 @@ fn run_test(asm_file : &'static str, expected : u32){
     .expect("failed to run assembler");
   assert!(status.success(), "assembler failed");
 
-  // execute hex file
+  // execute hex/ELF file emitted by the assembler
   let mut cpu = Emulator::new(hex_file.to_string_lossy().to_string());
   let result = cpu.run(0);
 
   // check result
   assert_eq!(result, Some(expected));
+}
+
+#[cfg(test)]
+fn run_test_expect_panic(asm_file: &'static str) {
+  let hex_file = {
+    let asm_path = Path::new(asm_file);
+    let stem = asm_path.file_stem().unwrap();
+    PathBuf::from("tests/hex").join(format!("{}.hex", stem.to_string_lossy()))
+  };
+
+  let assembler = assembler_path();
+  let status = Command::new(&assembler)
+    .args([asm_file, "-o", hex_file.to_str().unwrap()])
+    .status()
+    .expect("failed to run assembler");
+  assert!(status.success(), "assembler failed");
+
+  let result = std::panic::catch_unwind(|| {
+    let mut cpu = Emulator::new(hex_file.to_string_lossy().to_string());
+    let _ = cpu.run(0);
+  });
+
+  assert!(result.is_err(), "expected emulator to panic");
 }
 
 #[test]
@@ -304,4 +327,14 @@ fn call() {
 #[test]
 fn origin() {
   run_test("tests/asm/origin.s", 21);
+}
+
+#[test]
+fn bad_write_rodata_panics() {
+  run_test_expect_panic("tests/asm/bad_rodata_write.s");
+}
+
+#[test]
+fn bad_exec_data_panics() {
+  run_test_expect_panic("tests/asm/bad_exec_data.s");
 }

@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   add  r1 r0 10 # 0b1010
   add  r2 r0 6  # 0b0110

@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   movi r3 0xABABABAB
   mov  r1, r3

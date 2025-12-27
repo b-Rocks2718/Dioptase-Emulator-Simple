@@ -1,4 +1,5 @@
-  .origin 0xF0
+.text
+.global _start
 _start:
   movi r1, 21
   sys EXIT

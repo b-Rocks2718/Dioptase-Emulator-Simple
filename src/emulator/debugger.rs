@@ -327,11 +327,11 @@ impl Emulator {
   }
 
   pub fn debug(path: String) {
-    let (program, labels) = load_program(&path);
-    let labels_by_addr = build_labels_by_addr(&labels);
+    let image = load_program(&path);
+    let labels_by_addr = build_labels_by_addr(&image.labels);
     let mut breakpoints: HashSet<u32> = HashSet::new();
     let mut watchpoints: Vec<Watchpoint> = Vec::new();
-    let mut cpu = Emulator::from_instructions(program.clone());
+    let mut cpu = Emulator::from_image(&image);
     cpu.set_watchpoints(&watchpoints);
 
     println!("Debug mode:");
@@ -388,7 +388,7 @@ impl Emulator {
           println!("  q                 quit");
         }
         "r" => {
-          cpu = Emulator::from_instructions(program.clone());
+          cpu = Emulator::from_image(&image);
           cpu.set_watchpoints(&watchpoints);
           match run_until_breakpoint(&mut cpu, &breakpoints) {
             RunOutcome::Breakpoint(addr) => {
@@ -439,7 +439,7 @@ impl Emulator {
             continue;
           }
           let target = target.unwrap();
-          match resolve_label_or_addr(target, &labels) {
+          match resolve_label_or_addr(target, &image.labels) {
             Ok(addrs) => {
               if addrs.len() == 1 {
                 let addr = addrs[0];
@@ -461,7 +461,7 @@ impl Emulator {
             println!("Usage: delete <label|addr>");
             continue;
           }
-          delete_breakpoint(target.unwrap(), &mut breakpoints, &labels);
+          delete_breakpoint(target.unwrap(), &mut breakpoints, &image.labels);
         }
         "watch" => {
           let mut kind = WatchKind::ReadWrite;

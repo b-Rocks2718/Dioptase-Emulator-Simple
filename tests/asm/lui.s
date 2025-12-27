@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   lui  r6 0xAA000000
   mov  r6 r6

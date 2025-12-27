@@ -5,9 +5,15 @@ use std::path::Path;
 
 mod debugger;
 
+const STACK_SIZE: u32 = 0x10000;
+const STACK_TOP: u32 = 0x8000_0000;
+const STACK_BASE: u32 = STACK_TOP - STACK_SIZE;
+
 pub struct Emulator {
   regfile : [u32; 32],
   ram : HashMap<u32, u8>,
+  mem_regions: Vec<MemoryRegion>,
+  default_perm: MemPerm,
   pc : u32,
   flags : [bool; 4], // flags are: carry | zero | sign | overflow
   halted : bool,
@@ -23,6 +29,75 @@ where P: AsRef<Path>, {
 
 // Label -> address list (labels can appear multiple times across sections).
 type LabelMap = HashMap<String, Vec<u32>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// Memory permissions derived from ELF p_flags (R=4, W=2, X=1).
+struct MemPerm {
+  read: bool,
+  write: bool,
+  exec: bool,
+}
+
+impl MemPerm {
+  fn from_elf_flags(flags: u32) -> MemPerm {
+    MemPerm {
+      read: (flags & 4) != 0,
+      write: (flags & 2) != 0,
+      exec: (flags & 1) != 0,
+    }
+  }
+}
+
+const PERM_RWX: MemPerm = MemPerm {
+  read: true,
+  write: true,
+  exec: true,
+};
+
+const PERM_RW: MemPerm = MemPerm {
+  read: true,
+  write: true,
+  exec: false,
+};
+
+const PERM_NONE: MemPerm = MemPerm {
+  read: false,
+  write: false,
+  exec: false,
+};
+
+#[derive(Clone, Debug)]
+struct MemoryRegion {
+  base: u32,
+  size: u32,
+  perm: MemPerm,
+}
+
+impl MemoryRegion {
+  fn contains(&self, addr: u32) -> bool {
+    let start = self.base as u64;
+    let end = start + self.size as u64;
+    let addr = addr as u64;
+    addr >= start && addr < end
+  }
+}
+
+#[derive(Clone)]
+// Loader output: bytes + labels + entrypoint + region permissions.
+struct ProgramImage {
+  ram: HashMap<u32, u8>,
+  labels: LabelMap,
+  entry: u32,
+  regions: Vec<MemoryRegion>,
+  default_perm: MemPerm,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum MemAccess {
+  Read,
+  Write,
+  Exec,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WatchKind {
@@ -60,6 +135,25 @@ fn parse_hex_u32(token: &str) -> Option<u32> {
   u32::from_str_radix(s, 16).ok()
 }
 
+fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
+  if offset + 1 >= bytes.len() {
+    return None;
+  }
+  Some(u16::from(bytes[offset]) | (u16::from(bytes[offset + 1]) << 8))
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+  if offset + 3 >= bytes.len() {
+    return None;
+  }
+  Some(
+    u32::from(bytes[offset])
+      | (u32::from(bytes[offset + 1]) << 8)
+      | (u32::from(bytes[offset + 2]) << 16)
+      | (u32::from(bytes[offset + 3]) << 24),
+  )
+}
+
 fn add_label(labels: &mut LabelMap, name: &str, addr: u32) {
   let entry = labels.entry(name.to_string()).or_default();
   if !entry.contains(&addr) {
@@ -84,62 +178,217 @@ fn parse_label_line(line: &str, labels: &mut LabelMap) -> bool {
   false
 }
 
-// Load hex (or .debug) program and collect any embedded labels.
-fn load_program(path: &str) -> (HashMap<u32, u8>, LabelMap) {
-  let mut instructions = HashMap::new();
+// Load raw hex (with optional @ origins) or ELF text and collect labels.
+fn load_program(path: &str) -> ProgramImage {
   let mut labels = LabelMap::new();
-
   let lines = read_lines(path).expect("Couldn't open input file");
-  let mut pc: u32 = 0;
+  let mut raw_lines = Vec::new();
+
   for line in lines.map_while(Result::ok) {
+    if line.trim_start().starts_with('#') {
+      parse_label_line(line.trim(), &mut labels);
+    }
+    raw_lines.push(line);
+  }
+
+  let mut has_origin = false;
+  for line in &raw_lines {
+    let line = line.trim();
+    if line.starts_with('@') {
+      has_origin = true;
+      break;
+    }
+  }
+
+  if has_origin {
+    let mut instructions = HashMap::new();
+    let mut pc: u32 = 0;
+    let mut entry: Option<u32> = None;
+
+    for line in &raw_lines {
+      let line = line.trim();
+      if line.is_empty() {
+        continue;
+      }
+      if line.starts_with('#') || line.starts_with(';') || line.starts_with("//") {
+        continue;
+      }
+      if let Some(rest) = line.strip_prefix('@') {
+        let addr_str = rest.trim();
+        let addr = u32::from_str_radix(addr_str, 16).expect("Invalid address") * 4;
+        pc = addr;
+        continue;
+      }
+
+      let instruction = u32::from_str_radix(line, 16).expect("Error parsing hex file");
+      if entry.is_none() {
+        entry = Some(pc);
+      }
+      instructions.insert(pc, instruction as u8);
+      instructions.insert(pc + 1, (instruction >> 8) as u8);
+      instructions.insert(pc + 2, (instruction >> 16) as u8);
+      instructions.insert(pc + 3, (instruction >> 24) as u8);
+
+      pc += 4;
+    }
+
+    return ProgramImage {
+      ram: instructions,
+      labels,
+      entry: entry.unwrap_or(0),
+      regions: Vec::new(),
+      default_perm: PERM_RWX,
+    };
+  }
+
+  let mut words = Vec::new();
+  for line in &raw_lines {
     let line = line.trim();
     if line.is_empty() {
       continue;
     }
-
-    if line.starts_with('#') {
-      // Debug label lines are prefixed with '#'.
-      parse_label_line(line, &mut labels);
+    if line.starts_with('#') || line.starts_with(';') || line.starts_with("//") {
       continue;
     }
-    if line.starts_with(';') || line.starts_with("//") {
+    if line.starts_with('@') {
       continue;
     }
-
-    if let Some(rest) = line.strip_prefix('@') {
-      let addr_str = rest.trim();
-      let addr = u32::from_str_radix(addr_str, 16).expect("Invalid address") * 4;
-      pc = addr;
-      continue;
-    }
-
-    let instruction = u32::from_str_radix(line, 16).expect("Error parsing hex file");
-
-    instructions.insert(pc, instruction as u8);
-    instructions.insert(pc + 1, (instruction >> 8) as u8);
-    instructions.insert(pc + 2, (instruction >> 16) as u8);
-    instructions.insert(pc + 3, (instruction >> 24) as u8);
-
-    pc += 4;
+    let word = u32::from_str_radix(line, 16).expect("Error parsing hex file");
+    words.push(word);
   }
 
-  (instructions, labels)
+  if words.is_empty() {
+    return ProgramImage {
+      ram: HashMap::new(),
+      labels,
+      entry: 0,
+      regions: Vec::new(),
+      default_perm: PERM_NONE,
+    };
+  }
+
+  if words[0] != 0x464C457F {
+    // not an ELF file; load as raw hex file
+    let mut instructions = HashMap::new();
+    let mut pc: u32 = 0;
+    for instruction in words {
+      instructions.insert(pc, instruction as u8);
+      instructions.insert(pc + 1, (instruction >> 8) as u8);
+      instructions.insert(pc + 2, (instruction >> 16) as u8);
+      instructions.insert(pc + 3, (instruction >> 24) as u8);
+      pc += 4;
+    }
+    return ProgramImage {
+      ram: instructions,
+      labels,
+      entry: 0,
+      regions: Vec::new(),
+      default_perm: PERM_RWX,
+    };
+  }
+
+  // it is an ELF file; parse headers
+  let mut bytes = Vec::with_capacity(words.len() * 4);
+  for word in words {
+    bytes.extend_from_slice(&word.to_le_bytes());
+  }
+
+  let entry = read_u32_le(&bytes, 24).expect("ELF header truncated");
+  let phoff = read_u32_le(&bytes, 28).expect("ELF header truncated") as usize;
+  let phentsize = read_u16_le(&bytes, 42).expect("ELF header truncated") as usize;
+  let phnum = read_u16_le(&bytes, 44).expect("ELF header truncated") as usize;
+
+  if phentsize < 32 {
+    panic!("Unsupported ELF program header size {}", phentsize);
+  }
+  let pht_end = phoff + (phentsize * phnum);
+  if pht_end > bytes.len() {
+    panic!("ELF program header table is out of bounds");
+  }
+
+  let mut instructions = HashMap::new();
+  let mut regions = Vec::new();
+  for idx in 0..phnum {
+    let base = phoff + (idx * phentsize);
+    let p_type = read_u32_le(&bytes, base).expect("ELF program header truncated");
+    if p_type != 1 {
+      continue;
+    }
+    let p_offset = read_u32_le(&bytes, base + 4).expect("ELF program header truncated") as usize;
+    let p_vaddr = read_u32_le(&bytes, base + 8).expect("ELF program header truncated");
+    let p_filesz = read_u32_le(&bytes, base + 16).expect("ELF program header truncated");
+    let p_memsz = read_u32_le(&bytes, base + 20).expect("ELF program header truncated");
+    let p_flags = read_u32_le(&bytes, base + 24).expect("ELF program header truncated");
+
+    if p_memsz < p_filesz {
+      panic!("ELF program header has memsz < filesz");
+    }
+    let p_filesz_usize = p_filesz as usize;
+    if p_offset + p_filesz_usize > bytes.len() {
+      panic!("ELF segment is out of bounds");
+    }
+    for i in 0..p_filesz_usize {
+      let addr = p_vaddr.wrapping_add(i as u32);
+      instructions.insert(addr, bytes[p_offset + i]);
+    }
+
+    if p_memsz != 0 {
+      regions.push(MemoryRegion {
+        base: p_vaddr,
+        size: p_memsz,
+        perm: MemPerm::from_elf_flags(p_flags),
+      });
+    }
+  }
+
+  ProgramImage {
+    ram: instructions,
+    labels,
+    entry,
+    regions,
+    default_perm: PERM_NONE,
+  }
 }
 
 impl Emulator {
   pub fn new(path : String) -> Emulator {
-    let (instructions, _labels) = load_program(&path);
-    Emulator::from_instructions(instructions)
+    let image = load_program(&path);
+    Emulator::from_image(&image)
   }
 
   pub fn from_instructions(instructions: HashMap<u32, u8>) -> Emulator {
+    Emulator::from_parts(instructions, 0, Vec::new(), PERM_RWX)
+  }
+
+  fn from_image(image: &ProgramImage) -> Emulator {
+    Emulator::from_parts(
+      image.ram.clone(),
+      image.entry,
+      image.regions.clone(),
+      image.default_perm,
+    )
+  }
+
+  fn from_parts(
+    instructions: HashMap<u32, u8>,
+    entry: u32,
+    mut regions: Vec<MemoryRegion>,
+    default_perm: MemPerm,
+  ) -> Emulator {
+    // Reserve a simple RW stack below the default user text base.
+    regions.push(MemoryRegion {
+      base: STACK_BASE,
+      size: STACK_SIZE,
+      perm: PERM_RW,
+    });
+    let mut regfile = [0u32; 32];
+    regfile[31] = STACK_TOP;
     Emulator {
-      regfile: [0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0],
+      regfile,
       ram: instructions,
-      pc: 0,
+      mem_regions: regions,
+      default_perm,
+      pc: entry,
       flags: [false, false, false, false],
       halted: false,
       watchpoints: Vec::new(),
@@ -168,6 +417,27 @@ impl Emulator {
     }
   }
 
+  fn perm_for_addr(&self, addr: u32) -> MemPerm {
+    for region in &self.mem_regions {
+      if region.contains(addr) {
+        return region.perm;
+      }
+    }
+    self.default_perm
+  }
+
+  fn check_access(&self, addr: u32, access: MemAccess) {
+    let perm = self.perm_for_addr(addr);
+    let allowed = match access {
+      MemAccess::Read => perm.read,
+      MemAccess::Write => perm.write,
+      MemAccess::Exec => perm.exec,
+    };
+    if !allowed {
+      panic!("Memory {:?} access violation at {:08X}", access, addr);
+    }
+  }
+
   // Debug reads bypass watchpoints so inspection doesn't change execution flow.
   fn read_debug8(&self, addr: u32) -> u8 {
     *self.ram.get(&addr).unwrap_or(&0)
@@ -191,11 +461,16 @@ impl Emulator {
 
   // Instruction fetch uses debug reads to avoid triggering watchpoints.
   fn fetch32(&self, addr: u32) -> u32 {
+    // Exec permission is checked per byte.
+    for offset in 0..4 {
+      self.check_access(addr.wrapping_add(offset), MemAccess::Exec);
+    }
     self.read_debug32(addr)
   }
 
   // memory operations must be aligned
   fn mem_write8(&mut self, addr : u32, data : u8) {
+    self.check_access(addr, MemAccess::Write);
     self.maybe_watch(addr, WatchAccess::Write, data);
     self.ram.insert(addr, data);
   }
@@ -219,6 +494,7 @@ impl Emulator {
   }
 
   fn mem_read8(&mut self, addr : u32) -> u8 {
+    self.check_access(addr, MemAccess::Read);
     let value = if self.ram.contains_key(&addr) {
       self.ram[&addr]
     } else {
@@ -246,6 +522,7 @@ impl Emulator {
     u32::from(self.mem_read16(addr & 0xFFFFFFFC))
   }
 
+  // Fetch/decode/execute loop; returns r1 when halted.
   pub fn run(&mut self, max_iters: u32) -> Option<u32> {
     let mut cycles: u32 = 0;
     while !self.halted {
@@ -261,6 +538,7 @@ impl Emulator {
     Some(self.regfile[1])
   }
 
+  // Dispatch instruction families by top-level opcode.
   fn execute(&mut self, instr : u32) {
     let opcode = instr >> 27; // opcode is top 5 bits of instruction
 
@@ -332,7 +610,7 @@ impl Emulator {
     }
   }
 
-  // 2nd operand is either register or immediate
+  // ALU operations share flag updates; 2nd operand is register or immediate.
   fn alu_op(&mut self, instr : u32, imm : bool) {
     // instruction format is
     // 00000aaaaabbbbbxxxxxxx?????ccccc
@@ -505,6 +783,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Memory addressing modes are split by absolute/relative/immediate forms.
   fn mem_absolute(&mut self, instr : u32, size : u8){
     // instruction format is
     // 00011aaaaabbbbb?yyzziiiiiiiiiiii
@@ -857,6 +1136,7 @@ impl Emulator {
     }
   }
 
+  // Branch helpers: immediate PC-relative, absolute register, or relative register.
   fn branch_imm(&mut self, instr : u32){
     // instruction format is
     // 01100?????iiiiiiiiiiiiiiiiiiiiii

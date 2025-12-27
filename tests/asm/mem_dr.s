@@ -1,5 +1,5 @@
-DATA_1: .fill 0x22222222
-
+.text
+.global _start
 _start:
   ld   r13, [DATA_1]
   sd   r13, [DATA_2]
@@ -8,5 +8,7 @@ _start:
   mov  r1, r3
   sys  EXIT     # should return 0x11114444
 
+.data
+DATA_1: .fill 0x22222222
 .space 277
 DATA_2: .fill 0x11111111

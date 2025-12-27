@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   movi r3 0x5555
   movi r1, 2

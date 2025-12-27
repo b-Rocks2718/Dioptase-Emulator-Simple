@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   movi r1 0x8FFF0000
   movi r2 3

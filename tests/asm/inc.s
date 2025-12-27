@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   mov  r1 r0
   ld   r3 [r1, DATA]
@@ -7,5 +9,6 @@ _start:
   mov  r1, r3
   sys  EXIT # should return 0xFFFF
 
+.data
 DATA:
   .fill 0xAAAA5555

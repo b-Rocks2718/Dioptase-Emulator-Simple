@@ -1,3 +1,5 @@
+.text
+.global _start
 _start:
   movi r1 0x80000000
   add  r0 r1 r1
