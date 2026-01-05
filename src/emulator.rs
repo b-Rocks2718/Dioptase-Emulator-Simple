@@ -759,6 +759,32 @@ impl Emulator {
 
         result as u32
       },
+      18 => {
+        // sxtb (sign extend byte)
+        let byte = r_c & 0xFF;
+        if (byte & 0x80) != 0 {
+          byte | 0xFFFFFF00
+        } else {
+          byte
+        }
+      }
+      19 => {
+        // sxtd (sign extend double)
+        let half = r_c & 0xFFFF;
+        if (half & 0x8000) != 0 {
+          half | 0xFFFF0000
+        } else {
+          half
+        }
+      }
+      20 => {
+        // tncb (truncate to byte)
+        r_c & 0xFF
+      }
+      21 => {
+        // tncd (truncate to double)
+        r_c & 0xFFFF
+      }
       _ => {
         panic!("Unrecognized ALU operation");
       }
