@@ -1176,7 +1176,7 @@ impl Emulator {
     let branch = self.get_branch_condition(op);
 
     if branch {
-      self.pc = u32::wrapping_add(self.pc, u32::wrapping_add(4 , imm));
+      self.pc = u32::wrapping_add(self.pc, u32::wrapping_add(4 , imm * 4));
     } else {
       self.pc += 4;
     }
