@@ -30,6 +30,40 @@ where P: AsRef<Path>, {
 // Label -> address list (labels can appear multiple times across sections).
 type LabelMap = HashMap<String, Vec<u32>>;
 
+#[derive(Clone, Debug)]
+// Source line marker emitted by the assembler debug pipeline.
+struct DebugLine {
+  file: String,
+  line: u32,
+  addr: u32,
+}
+
+#[derive(Clone, Debug)]
+// Stack local debug metadata anchored to a code address.
+struct DebugLocal {
+  name: String,
+  offset: i32,
+  size: u32,
+}
+
+#[derive(Clone, Debug)]
+// Global data symbol debug metadata.
+struct DebugGlobal {
+  name: String,
+  addr: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+// Aggregated C debug info parsed from a .debug file.
+struct DebugInfo {
+  lines: Vec<DebugLine>,
+  locals_by_addr: HashMap<u32, Vec<DebugLocal>>,
+  globals: Vec<DebugGlobal>,
+  missing_line_addrs: bool,
+  missing_local_addrs: bool,
+  missing_local_sizes: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 // Memory permissions derived from ELF p_flags (R=4, W=2, X=1).
 struct MemPerm {
@@ -90,6 +124,7 @@ struct ProgramImage {
   entry: u32,
   regions: Vec<MemoryRegion>,
   default_perm: MemPerm,
+  debug: DebugInfo,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -178,15 +213,126 @@ fn parse_label_line(line: &str, labels: &mut LabelMap) -> bool {
   false
 }
 
+// Parse C debug metadata lines emitted by the assembler.
+fn parse_debug_line(line: &str, debug: &mut DebugInfo) -> bool {
+  const DEFAULT_LOCAL_SIZE_BYTES: u32 = 4;
+  let mut parts = line.split_whitespace();
+  match parts.next() {
+    Some("#line") => {
+      let Some(file) = parts.next() else {
+        return true;
+      };
+      let Some(line_str) = parts.next() else {
+        return true;
+      };
+      let line_num = match line_str.parse::<u32>() {
+        Ok(value) => value,
+        Err(_) => {
+          debug.missing_line_addrs = true;
+          return true;
+        }
+      };
+      let addr = match parts.next().and_then(parse_hex_u32) {
+        Some(value) => value,
+        None => {
+          debug.missing_line_addrs = true;
+          return true;
+        }
+      };
+      debug.lines.push(DebugLine {
+        file: file.to_string(),
+        line: line_num,
+        addr,
+      });
+      true
+    }
+    Some("#local") => {
+      let Some(name) = parts.next() else {
+        return true;
+      };
+      let Some(offset_str) = parts.next() else {
+        return true;
+      };
+      let offset = match offset_str.parse::<i32>() {
+        Ok(value) => value,
+        Err(_) => {
+          debug.missing_local_addrs = true;
+          return true;
+        }
+      };
+      let remaining: Vec<&str> = parts.collect();
+      let (size, addr_str) = match remaining.as_slice() {
+        [] => {
+          debug.missing_local_sizes = true;
+          debug.missing_local_addrs = true;
+          return true;
+        }
+        [addr_only] => {
+          debug.missing_local_sizes = true;
+          (DEFAULT_LOCAL_SIZE_BYTES, *addr_only)
+        }
+        [size_str, addr_str, ..] => {
+          let mut size = match size_str.parse::<u32>() {
+            Ok(value) if value > 0 => value,
+            _ => {
+              debug.missing_local_sizes = true;
+              DEFAULT_LOCAL_SIZE_BYTES
+            }
+          };
+          if size == 0 {
+            debug.missing_local_sizes = true;
+            size = DEFAULT_LOCAL_SIZE_BYTES;
+          }
+          (size, *addr_str)
+        }
+      };
+      let addr = match parse_hex_u32(addr_str) {
+        Some(value) => value,
+        None => {
+          debug.missing_local_addrs = true;
+          return true;
+        }
+      };
+      debug.locals_by_addr.entry(addr).or_default().push(DebugLocal {
+        name: name.to_string(),
+        offset,
+        size,
+      });
+      true
+    }
+    Some("#data") => {
+      let Some(name) = parts.next() else {
+        return true;
+      };
+      let Some(addr_str) = parts.next() else {
+        return true;
+      };
+      if let Some(addr) = parse_hex_u32(addr_str) {
+        if !debug.globals.iter().any(|g| g.name == name && g.addr == addr) {
+          debug.globals.push(DebugGlobal {
+            name: name.to_string(),
+            addr,
+          });
+        }
+      }
+      true
+    }
+    _ => false,
+  }
+}
+
 // Load raw hex (with optional @ origins) or ELF text and collect labels.
 fn load_program(path: &str) -> ProgramImage {
   let mut labels = LabelMap::new();
+  let mut debug = DebugInfo::default();
   let lines = read_lines(path).expect("Couldn't open input file");
   let mut raw_lines = Vec::new();
 
   for line in lines.map_while(Result::ok) {
     if line.trim_start().starts_with('#') {
-      parse_label_line(line.trim(), &mut labels);
+      let trimmed = line.trim();
+      parse_label_line(trimmed, &mut labels);
+      parse_debug_line(trimmed, &mut debug);
     }
     raw_lines.push(line);
   }
@@ -238,6 +384,7 @@ fn load_program(path: &str) -> ProgramImage {
       entry: entry.unwrap_or(0),
       regions: Vec::new(),
       default_perm: PERM_RWX,
+      debug: debug.clone(),
     };
   }
 
@@ -264,6 +411,7 @@ fn load_program(path: &str) -> ProgramImage {
       entry: 0,
       regions: Vec::new(),
       default_perm: PERM_NONE,
+      debug: debug.clone(),
     };
   }
 
@@ -284,6 +432,7 @@ fn load_program(path: &str) -> ProgramImage {
       entry: 0,
       regions: Vec::new(),
       default_perm: PERM_RWX,
+      debug: debug.clone(),
     };
   }
 
@@ -347,6 +496,7 @@ fn load_program(path: &str) -> ProgramImage {
     entry,
     regions,
     default_perm: PERM_NONE,
+    debug,
   }
 }
 

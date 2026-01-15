@@ -11,6 +11,7 @@ fn main() {
   let args = env::args().collect::<Vec<_>>();
 
   let mut debug = false;
+  let mut debugc = false;
   let mut max_cycles: u32 = 0;
   let mut path: Option<String> = None;
 
@@ -18,6 +19,7 @@ fn main() {
   while let Some(arg) = iter.next() {
     match arg.as_str() {
       "--debug" => debug = true,
+      "--debugc" => debugc = true,
       "--max-cycles" => {
         let value = iter.next().unwrap_or_else(|| {
           println!("Missing value for --max-cycles");
@@ -43,7 +45,7 @@ fn main() {
         if path.is_none() {
           path = Some(arg.clone());
         } else {
-          println!("Usage: cargo run -- <file>.hex [--debug] [--max-cycles N]");
+          println!("Usage: cargo run -- <file>.hex [--debug|--debugc] [--max-cycles N]");
           process::exit(1);
         }
       }
@@ -51,7 +53,16 @@ fn main() {
   }
 
   if let Some(path) = path {
-    if debug {
+    if debug && debugc {
+      println!("Error: --debug and --debugc are mutually exclusive");
+      process::exit(1);
+    }
+    if debugc {
+      if max_cycles != 0 {
+        println!("Warning: --max-cycles is ignored in debugc mode");
+      }
+      Emulator::debug_c(path);
+    } else if debug {
       if max_cycles != 0 {
         println!("Warning: --max-cycles is ignored in debug mode");
       }
@@ -62,7 +73,7 @@ fn main() {
       println!("{:08x}", result);
     }
   } else {
-    println!("Usage: cargo run -- <file>.hex [--debug] [--max-cycles N]");
+    println!("Usage: cargo run -- <file>.hex [--debug|--debugc] [--max-cycles N]");
     process::exit(1);
   }
 }

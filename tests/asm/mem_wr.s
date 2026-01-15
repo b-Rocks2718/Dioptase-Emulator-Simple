@@ -15,7 +15,7 @@ _start:
 .fill 0x66666666
 DATA_1: .fill 0xFFFFFFFF
 .fill 0x11111111
-.space 128
+.space 512
 .fill 0x22222222
 DATA_2: .fill 38
 .fill 0x33333333
