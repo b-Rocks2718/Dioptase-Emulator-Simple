@@ -716,6 +716,7 @@ impl Emulator {
       13 => self.branch_absolute(instr),
       14 => self.branch_relative(instr),
       15 => self.syscall(instr),
+      22 => self.adpc(instr),
       
       // fadd
       16 => self.atomic_absolute(instr, 0),
@@ -740,6 +741,18 @@ impl Emulator {
       // r0 is always zero
       self.regfile[regnum as usize] = value;
     }
+  }
+
+  fn adpc(&mut self, instr: u32) {
+    // adpc rA, i
+    // rA <- pc + 4 + sign-extended 22-bit immediate (pc-relative to next instruction).
+    let r_a = (instr >> 22) & 0x1F;
+    let imm = (instr & 0x3FFFFF) as i32;
+    let imm = (imm << 10) >> 10; // sign-extend 22 bits
+    let pc = self.pc as i32;
+    let value = pc.wrapping_add(4).wrapping_add(imm) as u32;
+    self.write_reg(r_a, value);
+    self.pc += 4;
   }
 
   fn decode_alu_imm(op : u32, imm : u32) -> u32 {

@@ -231,6 +231,11 @@ fn movi() {
 }
 
 #[test]
+fn adpc() {
+  run_test("tests/asm/adpc.s", 0);
+}
+
+#[test]
 fn mem_wa() {
   run_test("tests/asm/mem_wa.s", 0x42424242);
 }
