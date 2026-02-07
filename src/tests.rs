@@ -390,3 +390,9 @@ fn bad_write_rodata_panics() {
 fn bad_exec_data_panics() {
   run_test_expect_panic("tests/asm/bad_exec_data.s");
 }
+
+#[test]
+fn carry() {
+  run_test("tests/asm/carry.s", 42);
+}
+
