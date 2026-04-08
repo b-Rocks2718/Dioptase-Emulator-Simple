@@ -311,8 +311,11 @@ fn disassemble_kernel(instr: u32) -> String {
             }
         }
         3 => {
-            let is_rfi = ((instr >> 11) & 1) != 0;
-            if is_rfi { "rfi".to_string() } else { "rfe".to_string() }
+            if ((instr >> 11) & 1) != 0 {
+                format!("data {}", fmt_imm_hex(instr))
+            } else {
+                "rfe".to_string()
+            }
         }
         4 => {
             let r_a = (instr >> 22) & 0x1F;
@@ -367,5 +370,11 @@ mod tests {
     fn disassembles_eoi_all() {
         let instr = (31u32 << 27) | (5u32 << 12) | (1u32 << 11);
         assert_eq!(disassemble(instr), "eoi all");
+    }
+
+    #[test]
+    fn disassembles_reserved_alt_rfe_encoding_as_data() {
+        let instr = (31u32 << 27) | (3u32 << 12) | (1u32 << 11);
+        assert_eq!(disassemble(instr), "data 0xF8003800");
     }
 }
