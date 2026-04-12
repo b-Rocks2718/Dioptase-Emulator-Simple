@@ -12,4 +12,6 @@ _start:
   # result should be 0xAAAAAAACFFFFFFFE
   # r1 should have 0xAAAAAAAD
   mov  r1, r3
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap

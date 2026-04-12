@@ -6,4 +6,6 @@ _start:
   sba  r5 [r4, -0x10] # store at address 0x7FFFFFF0
   lba  r3 [r4, -0x10]
   mov  r1, r3
-  sys  EXIT     # should return 0x42
+  mov  r2, r1
+  movi r1, 0
+  trap     # should return 0x42

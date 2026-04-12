@@ -6,7 +6,11 @@ _start:
   sub  r4 r1 r2       # 0x80000000 - 1 = 0x7FFFFFFF with overflow set
   bo   overflow       # should be taken
   movi r1 0xBAD       # failure path if overflow was not set
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap
 overflow:
   movi r1 1
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap

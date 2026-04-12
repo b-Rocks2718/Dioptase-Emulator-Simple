@@ -7,7 +7,9 @@ _start:
   sw   r13, [DATA_2]
   lw   r3,  [r0, DATA_2]
   mov  r1, r3
-  sys  EXIT     # should return 0x25 = 37
+  mov  r2, r1
+  movi r1, 0
+  trap     # should return 0x25 = 37
 
 .data
 .fill 0x44444444

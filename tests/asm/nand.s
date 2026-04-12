@@ -6,4 +6,6 @@ _start:
   nand r3 r1 r2 # 0b1111 1111 1111 1101
   nand r3, r3, 5
   mov  r1, r3
-  sys  EXIT # should return -6
+  mov  r2, r1
+  movi r1, 0
+  trap # should return -6

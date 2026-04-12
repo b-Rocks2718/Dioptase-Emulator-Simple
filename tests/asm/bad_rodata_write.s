@@ -3,7 +3,9 @@
 _start:
   movi r1 0x1234
   sw   r1, [RODATA]
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap
 
 .rodata
 RODATA:

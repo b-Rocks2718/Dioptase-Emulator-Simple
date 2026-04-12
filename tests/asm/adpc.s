@@ -5,7 +5,9 @@ _start:
   adpc r1, target
   lw   r2, [target_addr]
   sub  r1, r1, r2
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap
 
 target:
   nop

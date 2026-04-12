@@ -6,4 +6,6 @@ _start:
   lsl  r3 r3 r1
   lsl  r3 r3 1
   mov  r1, r3
-  sys  EXIT # should return 0x55550
+  mov  r2, r1
+  movi r1, 0
+  trap # should return 0x55550

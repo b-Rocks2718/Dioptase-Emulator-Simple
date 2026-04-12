@@ -4,4 +4,6 @@ _start:
   movi r2 0x12348000
   tncd r3 r2
   add  r1 r3 1
-  sys  EXIT # should return 0x00008001
+  mov  r2, r1
+  movi r1, 0
+  trap # should return 0x00008001

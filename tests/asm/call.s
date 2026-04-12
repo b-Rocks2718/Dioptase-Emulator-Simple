@@ -2,11 +2,21 @@
 .global _start
 _start:
   call far_label
-  sys  EXIT # should return 42
+  mov  r2, r1
+  movi r1, 0
+  trap # should return 42
 
-  sys  EXIT
-  sys  EXIT
-  sys  EXIT
+  mov  r2, r1
+
+  movi r1, 0
+
+  trap
+  mov  r2, r1
+  movi r1, 0
+  trap
+  mov  r2, r1
+  movi r1, 0
+  trap
 
 far_label:
   add  r3 r0 21
@@ -14,6 +24,14 @@ far_label:
   mov  r1, r3
   ret  
 
-  sys  EXIT
-  sys  EXIT
-  sys  EXIT
+  mov  r2, r1
+
+  movi r1, 0
+
+  trap
+  mov  r2, r1
+  movi r1, 0
+  trap
+  mov  r2, r1
+  movi r1, 0
+  trap

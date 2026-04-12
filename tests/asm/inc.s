@@ -7,7 +7,9 @@ _start:
   ld   r4 [r1, DATA]
   add  r3 r4 r3
   mov  r1, r3
-  sys  EXIT # should return 0xFFFF
+  mov  r2, r1
+  movi r1, 0
+  trap # should return 0xFFFF
 
 .data
 DATA:

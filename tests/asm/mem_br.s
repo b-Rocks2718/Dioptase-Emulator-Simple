@@ -6,7 +6,9 @@ _start:
   lw   r3,  [DATA_2]
   add  r3, r13, r3
   mov  r1, r3
-  sys  EXIT     # should return 0x11111144
+  mov  r2, r1
+  movi r1, 0
+  trap     # should return 0x11111144
 
 .data
 DATA_1: .fill 0x22222222

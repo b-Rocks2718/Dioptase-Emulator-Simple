@@ -2,7 +2,9 @@
 .global _start
 _start:
   br   DATA
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap
 
 .data
 DATA:

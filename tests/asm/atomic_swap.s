@@ -31,7 +31,9 @@ _start:
   add  r14 r14 r10
   add  r14 r14 r13
   mov  r1, r14
-  sys  EXIT     # should return 0x164
+  mov  r2, r1
+  movi r1, 0
+  trap     # should return 0x164
 
 .data
 SWAP_REL: .fill 0x33

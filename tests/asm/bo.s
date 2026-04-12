@@ -6,17 +6,25 @@ _start:
   add  r0 r1 r2
   bo   label # this should be taken
   movi r1 0xE
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap
 label:
   add  r0 r2 r2
   bc   label2 # this branch should not be taken
   add  r0 r1 r1
   bc   label3 # this branch should not be taken
   movi r1 0
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap
 label2:
   movi r1 0xF
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap
 label3:
   movi r1 0xD
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap

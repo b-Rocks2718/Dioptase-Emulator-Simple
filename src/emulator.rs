@@ -715,7 +715,7 @@ impl Emulator {
       12 => self.branch_imm(instr),
       13 => self.branch_absolute(instr),
       14 => self.branch_relative(instr),
-      15 => self.syscall(instr),
+      15 => self.trap_instr(instr),
       22 => self.adpc(instr),
       
       // fadd
@@ -1387,16 +1387,24 @@ impl Emulator {
     }
   }
 
-  fn syscall(&mut self, instr : u32){
-    let imm = instr & 0xFF;
+  fn trap_instr(&mut self, instr : u32){
+    const TRAP_PAYLOAD_MASK: u32 = 0x07FF_FFFF;
+    const TRAP_EXIT_CODE: u32 = 0;
 
-    match imm {
-      1 => {
-        // sys EXIT
-        self.halted = true;
-      }
-      _ => panic!("Unrecognized syscall")
+    let payload = instr & TRAP_PAYLOAD_MASK;
+    if payload != 0 {
+      panic!("Invalid trap encoding 0x{instr:08X}");
     }
+
+    // The simple emulator uses `trap` as a host-side termination helper. When
+    // software follows the exit trap ABI, r2 carries the exit status value, so
+    // copy it back into r1 so run() can report it. Tests that execute a bare
+    // trap still halt and return the current r1 value.
+    if self.get_reg(1) == TRAP_EXIT_CODE {
+      self.write_reg(1, self.get_reg(2));
+    }
+
+    self.halted = true;
   }
 
   // carry flag handled separately in each alu operation

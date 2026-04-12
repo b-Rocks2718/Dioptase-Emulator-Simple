@@ -7,4 +7,6 @@ _start:
   push r7
   pop  r0
   pop  r1
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap

@@ -7,4 +7,6 @@ _start:
   xnor r3 r3 16 
   # should return 13
   mov  r1, r3
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap

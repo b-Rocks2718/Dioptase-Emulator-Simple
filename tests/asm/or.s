@@ -7,4 +7,6 @@ _start:
   or   r3 r3 1 
   or   r3 r3 0xF0000000 # should be 0xF000000F
   mov  r1, r3
-  sys  EXIT
+  mov  r2, r1
+  movi r1, 0
+  trap

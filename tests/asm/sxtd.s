@@ -6,4 +6,6 @@ _start:
   sxtd r4 r2
   sxtd r5 r3
   sub  r1 r4 r5
-  sys  EXIT # should return 0x0000FFFF
+  mov  r2, r1
+  movi r1, 0
+  trap # should return 0x0000FFFF
