@@ -1,5 +1,7 @@
 # Simple Dioptase Emulator
 
+[![CI](https://github.com/b-Rocks2718/Dioptase-Emulator-Simple/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/b-Rocks2718/Dioptase-Emulator-Simple/actions/workflows/ci.yml)
+
 This emulator is for the user-mode subset of the [Dioptase ISA](https://github.com/b-Rocks2718/Dioptase/blob/main/docs/ISA.md)  
 
 It accepts a pseudo-ELF file output by my assembler and runs the program. Will allocate sections specified by the ELF file
