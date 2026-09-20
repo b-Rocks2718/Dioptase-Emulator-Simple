@@ -7,6 +7,7 @@ pub mod disassembler;
 
 use emulator::Emulator;
 
+// Parse command-line options, load a program image, and run the emulator.
 fn main() {
   let args = env::args().collect::<Vec<_>>();
 
