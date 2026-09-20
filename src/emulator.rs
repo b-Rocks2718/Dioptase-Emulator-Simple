@@ -9,6 +9,7 @@ const STACK_SIZE: u32 = 0x10000;
 const STACK_TOP: u32 = 0x8000_0000;
 const STACK_BASE: u32 = STACK_TOP - STACK_SIZE;
 
+// Owns the CPU state, guest memory, and execution metadata for one emulator.
 pub struct Emulator {
   regfile : [u32; 32],
   ram : HashMap<u32, u8>,
@@ -73,6 +74,7 @@ struct MemPerm {
 }
 
 impl MemPerm {
+  // Convert ELF permission bits to the emulator's memory-permission flags.
   fn from_elf_flags(flags: u32) -> MemPerm {
     MemPerm {
       read: (flags & 4) != 0,
@@ -100,6 +102,7 @@ const PERM_NONE: MemPerm = MemPerm {
   exec: false,
 };
 
+// Describes a contiguous loaded memory region and its access permissions.
 #[derive(Clone, Debug)]
 struct MemoryRegion {
   base: u32,
@@ -108,6 +111,7 @@ struct MemoryRegion {
 }
 
 impl MemoryRegion {
+  // Return whether the address falls within this region.
   fn contains(&self, addr: u32) -> bool {
     let start = self.base as u64;
     let end = start + self.size as u64;
@@ -127,6 +131,7 @@ struct ProgramImage {
   debug: DebugInfo,
 }
 
+// Classifies an attempted memory operation for permission checks.
 #[derive(Clone, Copy, Debug)]
 enum MemAccess {
   Read,
@@ -134,6 +139,7 @@ enum MemAccess {
   Exec,
 }
 
+// Selects which kinds of access cause a watchpoint to fire.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WatchKind {
   Read,
@@ -141,6 +147,7 @@ enum WatchKind {
   ReadWrite,
 }
 
+// Records whether a watchpoint was triggered by a read or write.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WatchAccess {
   Read,
@@ -154,6 +161,7 @@ struct Watchpoint {
   kind: WatchKind,
 }
 
+// Describes the memory access that triggered a watchpoint.
 #[derive(Clone, Copy, Debug)]
 struct WatchpointHit {
   addr: u32,
@@ -161,6 +169,7 @@ struct WatchpointHit {
   value: u8,
 }
 
+// Parse a hexadecimal 32-bit word from debugger/program-image input.
 fn parse_hex_u32(token: &str) -> Option<u32> {
   let s = token.trim();
   let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
@@ -170,6 +179,7 @@ fn parse_hex_u32(token: &str) -> Option<u32> {
   u32::from_str_radix(s, 16).ok()
 }
 
+// Decode two little-endian bytes as a 16-bit value.
 fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
   if offset + 1 >= bytes.len() {
     return None;
@@ -177,6 +187,7 @@ fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
   Some(u16::from(bytes[offset]) | (u16::from(bytes[offset + 1]) << 8))
 }
 
+// Decode four little-endian bytes as a 32-bit value.
 fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
   if offset + 3 >= bytes.len() {
     return None;
@@ -189,6 +200,7 @@ fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
   )
 }
 
+// Index a debug symbol by address for source and debugger lookup.
 fn add_label(labels: &mut LabelMap, name: &str, addr: u32) {
   let entry = labels.entry(name.to_string()).or_default();
   if !entry.contains(&addr) {
@@ -501,15 +513,18 @@ fn load_program(path: &str) -> ProgramImage {
 }
 
 impl Emulator {
+  // Create an emulator with empty guest state and the supplied program image.
   pub fn new(path : String) -> Emulator {
     let image = load_program(&path);
     Emulator::from_image(&image)
   }
 
+  // Build an emulator image from raw instruction words.
   pub fn from_instructions(instructions: HashMap<u32, u8>) -> Emulator {
     Emulator::from_parts(instructions, 0, Vec::new(), PERM_RWX)
   }
 
+  // Build an emulator image from an assembled binary image.
   fn from_image(image: &ProgramImage) -> Emulator {
     Emulator::from_parts(
       image.ram.clone(),
@@ -519,6 +534,7 @@ impl Emulator {
     )
   }
 
+  // Assemble the emulator state from its constituent memory and debug data.
   fn from_parts(
     instructions: HashMap<u32, u8>,
     entry: u32,
@@ -567,6 +583,7 @@ impl Emulator {
     }
   }
 
+  // Find the permissions governing an address, if it belongs to a loaded region.
   fn perm_for_addr(&self, addr: u32) -> MemPerm {
     for region in &self.mem_regions {
       if region.contains(addr) {
@@ -576,6 +593,7 @@ impl Emulator {
     self.default_perm
   }
 
+  // Enforce the requested access permission for an address.
   fn check_access(&self, addr: u32, access: MemAccess) {
     let perm = self.perm_for_addr(addr);
     let allowed = match access {
@@ -593,6 +611,7 @@ impl Emulator {
     *self.ram.get(&addr).unwrap_or(&0)
   }
 
+  // Read a 16-bit debug value without changing execution state.
   fn read_debug16(&self, addr: u32) -> u16 {
     if (addr & 1) != 0 {
       println!("Warning: unaligned memory access at {:08x}", addr);
@@ -601,6 +620,7 @@ impl Emulator {
     u16::from(self.read_debug8(addr & 0xFFFFFFFE))
   }
 
+  // Read a 32-bit debug value without changing execution state.
   fn read_debug32(&self, addr: u32) -> u32 {
     if (addr & 3) != 0 {
       println!("Warning: unaligned memory access at {:08x}", addr);
@@ -625,6 +645,7 @@ impl Emulator {
     self.ram.insert(addr, data);
   }
 
+  // Execute a 16-bit memory store.
   fn mem_write16(&mut self, addr : u32, data : u16) {
     if (addr & 1) != 0 {
       // unaligned access
@@ -634,6 +655,7 @@ impl Emulator {
     self.mem_write8((addr & 0xFFFFFFFE) + 1, (data >> 8) as u8);
   }
 
+  // Execute a 32-bit memory store.
   fn mem_write32(&mut self, addr : u32, data : u32) {
     if (addr & 3) != 0 {
       // unaligned access
@@ -643,6 +665,7 @@ impl Emulator {
     self.mem_write16((addr & 0xFFFFFFFC) + 2, (data >> 16) as u16);
   }
 
+  // Execute an 8-bit memory load.
   fn mem_read8(&mut self, addr : u32) -> u8 {
     self.check_access(addr, MemAccess::Read);
     let value = if self.ram.contains_key(&addr) {
@@ -654,6 +677,7 @@ impl Emulator {
     value
   }
 
+  // Execute a 16-bit memory load.
   fn mem_read16(&mut self, addr : u32) -> u16 {
     if (addr & 1) != 0 {
       // unaligned access
@@ -663,6 +687,7 @@ impl Emulator {
     u16::from(self.mem_read8(addr & 0xFFFFFFFE))
   }
 
+  // Execute a 32-bit memory load.
   fn mem_read32(&mut self, addr : u32) -> u32 {
     if (addr & 3) != 0 {
       // unaligned access
@@ -731,10 +756,12 @@ impl Emulator {
     }
   }
 
+  // Read a general-purpose register, preserving the architectural r0 value.
   fn get_reg(&self, regnum : u32) -> u32 {
     self.regfile[regnum as usize]
   }
 
+  // Write a general-purpose register while discarding writes to r0.
   fn write_reg(&mut self, regnum : u32, value : u32) {
     // normal register access
     if regnum != 0 {
@@ -743,6 +770,7 @@ impl Emulator {
     }
   }
 
+  // Execute add-PC and write the computed address to its destination register.
   fn adpc(&mut self, instr: u32) {
     // adpc rA, i
     // rA <- pc + 4 + sign-extended 22-bit immediate (pc-relative to next instruction).
@@ -755,6 +783,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Decode the immediate ALU encoding, including packed shift forms.
   fn decode_alu_imm(op : u32, imm : u32) -> u32 {
     match op {
       0..=6 => {
@@ -961,6 +990,7 @@ impl Emulator {
 
   }
 
+  // Execute load-upper-immediate and place the shifted value in the destination.
   fn load_upper_immediate(&mut self, instr : u32){
     // store imm << 10 in r_a
     let r_a = (instr >> 22) & 0x1F;
@@ -1047,6 +1077,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Execute a memory operation using register-relative addressing.
   fn mem_relative(&mut self, instr : u32, size : u8){
     // instruction format is
     // 00100aaaaabbbbb?iiiiiiiiiiiiiiii
@@ -1114,6 +1145,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Execute a memory operation using an encoded immediate offset.
   fn mem_imm(&mut self, instr : u32, size : u8){
     // instruction format is
     // 00101aaaaa?iiiiiiiiiiiiiiiiiiiii
@@ -1176,6 +1208,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Execute an atomic operation using an absolute address.
   fn atomic_absolute(&mut self, instr : u32, type_ : u8){
     // instruction format is
     // 10000aaaaabbbbbccccciiiiiiiiiiii - fadd
@@ -1213,6 +1246,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Execute an atomic operation using register-relative addressing.
   fn atomic_relative(&mut self, instr : u32, type_ : u8){
     // instruction format is
     // 10001aaaaabbbbbccccciiiiiiiiiiii
@@ -1254,6 +1288,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Execute an atomic operation using an encoded immediate offset.
   fn atomic_imm(&mut self, instr : u32, type_ : u8){
     // instruction format is
     // 10010aaaaabbbbbiiiiiiiiiiiiiiiii
@@ -1292,6 +1327,7 @@ impl Emulator {
     self.pc += 4;
   }
 
+  // Evaluate a branch condition against the current processor flags.
   fn get_branch_condition(&self, op: u32) -> bool {
     let carry = self.flags[0];
     let zero = self.flags[1];
@@ -1345,6 +1381,7 @@ impl Emulator {
 
   }
 
+  // Execute a branch to the address formed from two registers.
   fn branch_absolute(&mut self, instr : u32){
     // instruction format is
     // 01101?????xxxxxxxxxxxxaaaaabbbbb
@@ -1366,6 +1403,7 @@ impl Emulator {
     }
   }
 
+  // Execute a branch using a register-relative target.
   fn branch_relative(&mut self, instr : u32){
     // instruction format is
     // 01110?????xxxxxxxxxxxxaaaaabbbbb
@@ -1387,6 +1425,7 @@ impl Emulator {
     }
   }
 
+  // Enter the trap path for the encoded trap instruction.
   fn trap_instr(&mut self, instr : u32){
     const TRAP_PAYLOAD_MASK: u32 = 0x07FF_FFFF;
     const TRAP_EXIT_CODE: u32 = 0;
