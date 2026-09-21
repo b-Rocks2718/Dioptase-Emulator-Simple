@@ -60,7 +60,7 @@ fn assembler_path() -> PathBuf {
   path
 }
 
-// Ensure hex dir.
+// Create the generated-image directory used by instruction fixtures.
 #[cfg(test)]
 fn ensure_hex_dir() {
   let hex_dir = Path::new("tests/hex");
@@ -95,7 +95,7 @@ fn run_test(asm_file : &'static str, expected : u32){
   assert_eq!(result, Some(expected));
 }
 
-// Run test expect panic.
+// Assemble a fixture and verify that executing it triggers an emulator panic.
 #[cfg(test)]
 fn run_test_expect_panic(asm_file: &'static str) {
   ensure_hex_dir();
@@ -121,338 +121,338 @@ fn run_test_expect_panic(asm_file: &'static str) {
   assert!(result.is_err(), "expected emulator to panic");
 }
 
-// Verify the and instruction's result and architectural side effects.
+// Check register AND produces the expected bit mask.
 #[test]
 fn and() {
   run_test("tests/asm/and.s", 2);
 }
 
-// Verify the nand instruction's result and architectural side effects.
+// Check NAND complements the register AND result.
 #[test]
 fn nand() {
   run_test("tests/asm/nand.s", 0xFFFFFFFA);
 }
 
-// Verify the or instruction's result and architectural side effects.
+// Check register OR combines every set input bit.
 #[test]
 fn or() {
   run_test("tests/asm/or.s", 0xF000000F);
 }
 
-// Verify the nor instruction's result and architectural side effects.
+// Check NOR complements the register OR result.
 #[test]
 fn nor() {
   run_test("tests/asm/nor.s", 6);
 }
 
-// Verify the xor instruction's result and architectural side effects.
+// Check register XOR preserves bits set in exactly one operand.
 #[test]
 fn xor() {
   run_test("tests/asm/xor.s", 25);
 }
 
-// Verify the xnor instruction's result and architectural side effects.
+// Check XNOR complements the register XOR result.
 #[test]
 fn xnor() {
   run_test("tests/asm/xnor.s", 13);
 }
 
-// Verify the not instruction's result and architectural side effects.
+// Check NOT complements every bit in its operand.
 #[test]
 fn not() {
   run_test("tests/asm/not.s", 1);
 }
 
-// Verify the lsl instruction's result and architectural side effects.
+// Check logical left shift inserts zeros at the low end.
 #[test]
 fn lsl() {
   run_test("tests/asm/lsl.s", 0x55550);
 }
 
-// Verify the lsr instruction's result and architectural side effects.
+// Check logical right shift inserts zeros at the high end.
 #[test]
 fn lsr() {
   run_test("tests/asm/lsr.s", 0xAAA);
 }
 
-// Verify the asr instruction's result and architectural side effects.
+// Check arithmetic right shift preserves the sign bit.
 #[test]
 fn asr() {
   run_test("tests/asm/asr.s", 0xF5555555);
 }
 
-// Verify the lslc instruction's result and architectural side effects.
+// Check left shift through carry consumes and updates the carry bit.
 #[test]
 fn lslc() {
   run_test("tests/asm/lslc.s", 0x143);
 }
 
-// Verify the lsrc instruction's result and architectural side effects.
+// Check right shift through carry consumes and updates the carry bit.
 #[test]
 fn lsrc() {
   run_test("tests/asm/lsrc.s", 0xC0000028);
 }
 
-// Verify the add instruction's result and architectural side effects.
+// Check register addition produces the expected sum.
 #[test]
 fn add() {
   run_test("tests/asm/add.s", 38);
 }
 
-// Verify the addc instruction's result and architectural side effects.
+// Check add-with-carry includes the incoming carry bit.
 #[test]
 fn addc() {
   run_test("tests/asm/addc.s", 0xAAAAAAAD);
 }
 
-// Verify the sub instruction's result and architectural side effects.
+// Check register subtraction produces the expected difference.
 #[test]
 fn sub() {
   run_test("tests/asm/sub.s", 8);
 }
 
-// Verify the subb instruction's result and architectural side effects.
+// Check subtract-with-borrow includes the incoming borrow state.
 #[test]
 fn subb() {
   run_test("tests/asm/subb.s", 0xFFFFFFFF);
 }
 
-// Test sub overflow sets flag.
+// Verify subtraction reports signed overflow through the architectural flag.
 #[test]
 fn sub_overflow_sets_flag() {
   run_test("tests/asm/sub_overflow.s", 1);
 }
 
-// Verify the sxtb instruction's result and architectural side effects.
+// Check byte sign extension preserves the encoded signed value.
 #[test]
 fn sxtb() {
   run_test("tests/asm/sxtb.s", 0x000000FF);
 }
 
-// Verify the sxtd instruction's result and architectural side effects.
+// Check halfword sign extension preserves the encoded signed value.
 #[test]
 fn sxtd() {
   run_test("tests/asm/sxtd.s", 0x0000FFFF);
 }
 
-// Verify the tncb instruction's result and architectural side effects.
+// Check byte truncation discards only the upper bits.
 #[test]
 fn tncb() {
   run_test("tests/asm/tncb.s", 0x00000081);
 }
 
-// Verify the tncd instruction's result and architectural side effects.
+// Check halfword truncation discards only the upper bits.
 #[test]
 fn tncd() {
   run_test("tests/asm/tncd.s", 0x00008001);
 }
 
-// Verify the lui instruction's result and architectural side effects.
+// Check load-upper-immediate places its payload in the high bits.
 #[test]
 fn lui() {
   run_test("tests/asm/lui.s", 0xAA000000);
 }
 
-// Verify the movi instruction's result and architectural side effects.
+// Check the movi pseudo-instruction constructs a full-width constant.
 #[test]
 fn movi() {
   run_test("tests/asm/movi.s", 0xABABABAB);
 }
 
-// Verify the adpc instruction's result and architectural side effects.
+// Check add-PC forms the expected PC-relative address.
 #[test]
 fn adpc() {
   run_test("tests/asm/adpc.s", 0);
 }
 
-// Test mem wa.
+// Verify the swa/lwa register-relative word round trip.
 #[test]
 fn mem_wa() {
   run_test("tests/asm/mem_wa.s", 0x42424242);
 }
 
-// Test mem wr.
+// Verify relocated lw/sw accesses preserve neighboring words.
 #[test]
 fn mem_wr() {
   run_test("tests/asm/mem_wr.s", 0x25);
 }
 
-// Test mem da.
+// Verify the sda/lda register-relative halfword round trip.
 #[test]
 fn mem_da() {
   run_test("tests/asm/mem_da.s", 0x4242);
 }
 
-// Test mem dr.
+// Verify relocated ld/sd accesses update only the selected halfword.
 #[test]
 fn mem_dr() {
   run_test("tests/asm/mem_dr.s", 0x11114444);
 }
 
-// Test mem ba.
+// Verify the sba/lba register-relative byte round trip.
 #[test]
 fn mem_ba() {
   run_test("tests/asm/mem_ba.s", 0x42);
 }
 
-// Test mem br.
+// Verify relocated lb/sb accesses update only the selected byte.
 #[test]
 fn mem_br() {
   run_test("tests/asm/mem_br.s", 0x11111144);
 }
 
-// Test atomic fadd.
+// Verify atomic fetch-add returns the old word and stores the sum.
 #[test]
 fn atomic_fadd() {
   run_test("tests/asm/atomic_fadd.s", 0x6D);
 }
 
-// Test atomic swap.
+// Verify atomic swap returns the old word and installs the replacement.
 #[test]
 fn atomic_swap() {
   run_test("tests/asm/atomic_swap.s", 0x164);
 }
 
-// Test r0 load invariant.
+// Verify memory loads cannot change the architecturally constant r0.
 #[test]
 fn r0_load_invariant() {
   run_test("tests/asm/r0_load_invariant.s", 0);
 }
 
-// Verify the inc instruction's result and architectural side effects.
+// Check increment updates the operand by exactly one.
 #[test]
 fn inc() {
   run_test("tests/asm/inc.s", 0xFFFF);
 }
 
-// Verify the stack instruction's result and architectural side effects.
+// Check stack pseudo-operations preserve pushed values and stack position.
 #[test]
 fn stack() {
   run_test("tests/asm/stack.s", 0x123456);
 }
 
-// Verify the ba instruction's result and architectural side effects.
+// Check unsigned-above branches only when carry and zero permit it.
 #[test]
 fn ba() {
   run_test("tests/asm/ba.s", 1);
 }
 
-// Verify the bae instruction's result and architectural side effects.
+// Check unsigned-above-or-equal follows the carry condition.
 #[test]
 fn bae() {
   run_test("tests/asm/bae.s", 1);
 }
 
-// Verify the bb instruction's result and architectural side effects.
+// Check unsigned-below follows the inverse carry condition.
 #[test]
 fn bb() {
   run_test("tests/asm/bb.s", 1);
 }
 
-// Verify the bbe instruction's result and architectural side effects.
+// Check unsigned-below-or-equal includes equality.
 #[test]
 fn bbe() {
   run_test("tests/asm/bbe.s", 1);
 }
 
-// Verify the bc instruction's result and architectural side effects.
+// Check branch-on-carry observes the carry flag.
 #[test]
 fn bc() {
   run_test("tests/asm/bc.s", 1);
 }
 
-// Verify the bz instruction's result and architectural side effects.
+// Check branch-on-zero observes the zero flag.
 #[test]
 fn bz() {
   run_test("tests/asm/bz.s", 1);
 }
 
 
-// Verify the bg instruction's result and architectural side effects.
+// Check signed-greater branches from the sign/overflow/zero flags.
 #[test]
 fn bg() {
   run_test("tests/asm/bg.s", 1);
 }
 
-// Verify the bge instruction's result and architectural side effects.
+// Check signed-greater-or-equal includes equality.
 #[test]
 fn bge() {
   run_test("tests/asm/bge.s", 1);
 }
 
-// Verify the bl instruction's result and architectural side effects.
+// Check signed-less branches from differing sign and overflow flags.
 #[test]
 fn bl() {
   run_test("tests/asm/bl.s", 2);
 }
 
-// Verify the ble instruction's result and architectural side effects.
+// Check signed-less-or-equal includes equality.
 #[test]
 fn ble() {
   run_test("tests/asm/ble.s", 3);
 }
 
-// Verify the bs instruction's result and architectural side effects.
+// Check branch-on-sign observes the sign flag.
 #[test]
 fn bs() {
   run_test("tests/asm/bs.s", 2);
 }
 
-// Verify the bnc instruction's result and architectural side effects.
+// Check branch-on-no-carry rejects a set carry flag.
 #[test]
 fn bnc() {
   run_test("tests/asm/bnc.s", 0);
 }
 
-// Verify the bnz instruction's result and architectural side effects.
+// Check branch-on-nonzero rejects a set zero flag.
 #[test]
 fn bnz() {
   run_test("tests/asm/bnz.s", 0);
 }
 
-// Verify the bo instruction's result and architectural side effects.
+// Check branch-on-overflow observes the overflow flag.
 #[test]
 fn bo() {
   run_test("tests/asm/bo.s", 0);
 }
 
-// Verify the bps instruction's result and architectural side effects.
+// Check branch-on-positive-sign rejects a set sign flag.
 #[test]
 fn bps() {
   run_test("tests/asm/bps.s", 0);
 }
 
-// Verify the jmp instruction's result and architectural side effects.
+// Check an unconditional jump resumes at its target.
 #[test]
 fn jmp() {
   run_test("tests/asm/jmp.s", 0);
 }
 
-// Verify the call instruction's result and architectural side effects.
+// Check call transfers control and preserves a usable return address.
 #[test]
 fn call() {
   run_test("tests/asm/call.s", 42);
 }
 
-// Verify the origin instruction's result and architectural side effects.
+// Check code assembled at a nonzero origin executes with correct addresses.
 #[test]
 fn origin() {
   run_test("tests/asm/origin.s", 21);
 }
 
-// Test bad write rodata panics.
+// Verify a store to a read-only loaded region is rejected.
 #[test]
 fn bad_write_rodata_panics() {
   run_test_expect_panic("tests/asm/bad_rodata_write.s");
 }
 
-// Test bad exec data panics.
+// Verify instruction fetch from a non-executable loaded region is rejected.
 #[test]
 fn bad_exec_data_panics() {
   run_test_expect_panic("tests/asm/bad_exec_data.s");
 }
 
-// Verify the carry instruction's result and architectural side effects.
+// Check arithmetic carry propagates through the tested instruction sequence.
 #[test]
 fn carry() {
   run_test("tests/asm/carry.s", 42);
