@@ -12,6 +12,8 @@ and fail if memory outside them is accessed.
 Run the emulator with `cargo run -- <file>.hex`  
 The value in r1 when the program terminates is printed.
 
+Use `--max-cycles N` to stop after N instructions; the run then exits with `did not terminate` instead of printing a result.
+
 Use `--debug` to start an interactive debugger (label breakpoints require `.debug` files built with assembler `--debug`)
 
 ### Debug Commands

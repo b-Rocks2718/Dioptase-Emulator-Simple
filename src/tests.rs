@@ -1,124 +1,67 @@
+// Instruction-level regression tests: each fixture in tests/asm is assembled
+// with the sibling Dioptase-Assembler checkout into a user-mode image and run
+// until its exit trap; the test checks the r1 value the program returns.
 
-#[cfg(test)]
 use std::fs;
-
-#[cfg(test)]
 use std::path::{Path, PathBuf};
-
-#[cfg(test)]
 use std::process::Command;
-
-#[cfg(test)]
 use std::sync::Once;
 
-#[cfg(test)]
-use super::*;
+use crate::emulator::Emulator;
 
-// Select the assembler profile used by the emulator integration tests.
-#[cfg(test)]
+// Assembler build profile matching the test binary profile.
 fn assembler_profile() -> &'static str {
-  // Match the assembler build to the test binary profile.
-  if cfg!(debug_assertions) {
-    "debug"
-  } else {
-    "release"
-  }
+  if cfg!(debug_assertions) { "debug" } else { "release" }
 }
 
-// Assemble a test program and return its executable image.
-#[cfg(test)]
-fn build_assembler() {
-  static BUILD: Once = Once::new();
-  BUILD.call_once(|| {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let asm_dir = manifest.join("../../Dioptase-Assembler");
-    // Build the assembler once so tests can run in clean environments.
-    let status = Command::new("make")
-      .arg(assembler_profile())
-      .current_dir(asm_dir)
-      .status()
-      .expect("failed to run make for assembler");
-    assert!(status.success(), "assembler build failed");
-  });
-}
-
-// Locate the assembler executable used to build a test image.
-#[cfg(test)]
+// Path to the assembler, building it once if it is missing.
 fn assembler_path() -> PathBuf {
-  let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-  let path = manifest
-    .join("../../Dioptase-Assembler")
-    .join("build")
-    .join(assembler_profile())
-    .join("basm");
-  if path.exists() {
-    return path;
+  static BUILD: Once = Once::new();
+  let asm_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Dioptase-Assembler");
+  let path = asm_dir.join("build").join(assembler_profile()).join("basm");
+  if !path.exists() {
+    BUILD.call_once(|| {
+      let status = Command::new("make")
+        .arg(assembler_profile())
+        .current_dir(&asm_dir)
+        .status()
+        .expect("failed to run make for assembler");
+      assert!(status.success(), "assembler build failed");
+    });
   }
-  // Build on-demand if the binary isn't present yet.
-  build_assembler();
   assert!(path.exists(), "assembler not found at {}", path.display());
   path
 }
 
-// Create the generated-image directory used by instruction fixtures.
-#[cfg(test)]
-fn ensure_hex_dir() {
-  let hex_dir = Path::new("tests/hex");
-  fs::create_dir_all(hex_dir).expect("failed to create tests/hex dir");
-}
-
-// Assemble and execute one instruction-level emulator test case.
-#[cfg(test)]
-fn run_test(asm_file : &'static str, expected : u32){
-  ensure_hex_dir();
-
-  // Build hex file path by replacing asm path prefix/suffix
-  let hex_file = {
-    let asm_path = Path::new(asm_file);
-    let stem = asm_path.file_stem().unwrap(); // e.g., "add"
-    PathBuf::from("tests/hex").join(format!("{}.hex", stem.to_string_lossy()))
-  };
-
-  // assemble test case
-  let assembler = assembler_path();
-  let status = Command::new(&assembler)
-    .args([asm_file, "-o", hex_file.to_str().unwrap()])
+// Assemble a fixture into tests/hex/<stem>.hex and return the image path.
+fn assemble(asm_file: &str) -> String {
+  fs::create_dir_all("tests/hex").expect("failed to create tests/hex dir");
+  let stem = Path::new(asm_file).file_stem().unwrap().to_string_lossy();
+  let hex_file = format!("tests/hex/{}.hex", stem);
+  let status = Command::new(assembler_path())
+    .args([asm_file, "-o", &hex_file])
     .status()
     .expect("failed to run assembler");
-  assert!(status.success(), "assembler failed");
-
-  // execute hex/ELF file emitted by the assembler
-  let mut cpu = Emulator::new(hex_file.to_string_lossy().to_string());
-  let result = cpu.run(0);
-
-  // check result
-  assert_eq!(result, Some(expected));
+  assert!(status.success(), "assembler failed on {}", asm_file);
+  hex_file
 }
 
-// Assemble a fixture and verify that executing it triggers an emulator panic.
-#[cfg(test)]
+// Load an assembled image, panicking with the loader's message on failure.
+fn load(hex_file: &str) -> Emulator {
+  Emulator::new(hex_file).unwrap_or_else(|err| panic!("{}", err))
+}
+
+// Assemble and run one fixture, expecting `expected` in r1.
+fn run_test(asm_file: &'static str, expected: u32) {
+  let mut cpu = load(&assemble(asm_file));
+  assert_eq!(cpu.run(0), Some(expected), "{} returned the wrong r1", asm_file);
+}
+
+// Assemble a fixture and verify that executing it stops the emulator.
 fn run_test_expect_panic(asm_file: &'static str) {
-  ensure_hex_dir();
-
-  let hex_file = {
-    let asm_path = Path::new(asm_file);
-    let stem = asm_path.file_stem().unwrap();
-    PathBuf::from("tests/hex").join(format!("{}.hex", stem.to_string_lossy()))
-  };
-
-  let assembler = assembler_path();
-  let status = Command::new(&assembler)
-    .args([asm_file, "-o", hex_file.to_str().unwrap()])
-    .status()
-    .expect("failed to run assembler");
-  assert!(status.success(), "assembler failed");
-
-  let result = std::panic::catch_unwind(|| {
-    let mut cpu = Emulator::new(hex_file.to_string_lossy().to_string());
-    let _ = cpu.run(0);
-  });
-
-  assert!(result.is_err(), "expected emulator to panic");
+  let hex = assemble(asm_file);
+  let result = std::panic::catch_unwind(|| load(&hex).run(0));
+  assert!(result.is_err(), "{} should stop the emulator with a panic", asm_file);
 }
 
 // Check register AND produces the expected bit mask.
@@ -456,4 +399,28 @@ fn bad_exec_data_panics() {
 #[test]
 fn carry() {
   run_test("tests/asm/carry.s", 42);
+}
+
+// asr by 0 must not sign-fill the result.
+#[test]
+fn asr_zero() {
+  run_test("tests/asm/asr_zero.s", 0x8000_0010);
+}
+
+// Immediate subb must use its immediate as the minuend.
+#[test]
+fn subb_imm() {
+  run_test("tests/asm/subb_imm.s", 42);
+}
+
+// Shift amounts above 31 saturate; rotates wrap modulo 32.
+#[test]
+fn shift_large() {
+  run_test("tests/asm/shift_large.s", 2);
+}
+
+// ALU-immediate op 18 has no immediate encoding; it used to execute sxtb.
+#[test]
+fn alu_imm_invalid_panics() {
+  run_test_expect_panic("tests/asm/alu_imm_invalid.s");
 }
