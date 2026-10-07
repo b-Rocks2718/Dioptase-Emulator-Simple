@@ -3,6 +3,7 @@ use std::process;
 
 pub mod disassembler;
 pub mod emulator;
+mod isa;
 #[cfg(test)]
 mod tests;
 

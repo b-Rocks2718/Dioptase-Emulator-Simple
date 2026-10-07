@@ -8,6 +8,12 @@
 
 use std::collections::HashMap;
 
+use crate::isa::{
+  OPC_ALU, OPC_ALU_IMM, OPC_LUI, OPC_MEM_WORD_ABS, OPC_MEM_BYTE_IMM, OPC_BRANCH_IMM,
+  OPC_BRANCH_ABS_REG, OPC_BRANCH_REL_REG, OPC_TRAP, OPC_FETCH_ADD_ABS, OPC_FETCH_ADD_IMM,
+  OPC_SWAP_ABS, OPC_SWAP_IMM, OPC_ADPC, OPC_PRIVILEGED, OP_SUB, OP_SUBB,
+};
+
 mod alu;
 mod debugger;
 mod program;
@@ -317,30 +323,30 @@ impl Emulator {
     const MODES: [AddrMode; 3] = [AddrMode::Absolute, AddrMode::Relative, AddrMode::Immediate];
     let opcode = instr >> 27;
     match opcode {
-      0 => self.alu_instr(instr, false),
-      1 => self.alu_instr(instr, true),
-      2 => {
+      OPC_ALU => self.alu_instr(instr, false),
+      OPC_ALU_IMM => self.alu_instr(instr, true),
+      OPC_LUI => {
         // lui: rA <- imm22 << 10
         self.write_reg(field_a(instr), (instr & 0x3F_FFFF) << 10);
         self.advance();
       }
-      3..=11 => {
-        let group = (opcode - 3) as usize;
+      OPC_MEM_WORD_ABS..=OPC_MEM_BYTE_IMM => {
+        let group = (opcode - OPC_MEM_WORD_ABS) as usize;
         self.mem_instr(instr, WIDTHS[group / 3], MODES[group % 3]);
       }
-      12 => self.branch_imm(instr),
-      13 => self.branch_reg(instr, false),
-      14 => self.branch_reg(instr, true),
-      15 => self.trap_instr(instr),
-      16..=18 => self.atomic_instr(instr, AtomicOp::FetchAdd, MODES[(opcode - 16) as usize]),
-      19..=21 => self.atomic_instr(instr, AtomicOp::Swap, MODES[(opcode - 19) as usize]),
-      22 => {
+      OPC_BRANCH_IMM => self.branch_imm(instr),
+      OPC_BRANCH_ABS_REG => self.branch_reg(instr, false),
+      OPC_BRANCH_REL_REG => self.branch_reg(instr, true),
+      OPC_TRAP => self.trap_instr(instr),
+      OPC_FETCH_ADD_ABS..=OPC_FETCH_ADD_IMM => self.atomic_instr(instr, AtomicOp::FetchAdd, MODES[(opcode - OPC_FETCH_ADD_ABS) as usize]),
+      OPC_SWAP_ABS..=OPC_SWAP_IMM => self.atomic_instr(instr, AtomicOp::Swap, MODES[(opcode - OPC_SWAP_ABS) as usize]),
+      OPC_ADPC => {
         // adpc: rA <- PC + 4 + sext(imm22)
         let imm = alu::sign_extend(instr & 0x3F_FFFF, 22);
         self.write_reg(field_a(instr), self.pc.wrapping_add(4).wrapping_add(imm));
         self.advance();
       }
-      31 => self.invalid_instruction(instr, "privileged instructions are not supported in user mode"),
+      OPC_PRIVILEGED => self.invalid_instruction(instr, "privileged instructions are not supported in user mode"),
       _ => self.invalid_instruction(instr, "undefined opcode"),
     }
   }
@@ -361,7 +367,7 @@ impl Emulator {
       self.invalid_instruction(instr, "undefined ALU op");
     };
     // Immediate subtractions compute imm - rB, so V uses that order.
-    let reversed = imm_form && (op == alu::OP_SUB || op == alu::OP_SUBB);
+    let reversed = imm_form && (op == OP_SUB || op == OP_SUBB);
     let (a, b) = if reversed { (rhs, lhs) } else { (lhs, rhs) };
     self.flags = Flags {
       carry: out.carry,
