@@ -342,12 +342,11 @@ fn disassemble_kernel(instr: u32) -> String {
       }
     }
     4 => {
-      let r_a = (instr >> 22) & 0x1F;
       let all = ((instr >> 11) & 1) != 0;
       if all {
-        format!("ipi {}, all", reg_name(r_a))
+        "ipi all".to_string()
       } else {
-        format!("ipi {}, {}", reg_name(r_a), instr & 0x3)
+        format!("ipi {}", instr & 0x3)
       }
     }
     5 => {
